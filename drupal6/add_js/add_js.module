@@ -1,0 +1,535 @@
+<?php
+
+/**
+ * @file
+ *   Provides a UI for admin users to add JavaScript to pages without needing
+ *   either custom code or a deployment.
+ */
+define('ADD_JS_USE_ON_ALL', 1);
+define('ADD_JS_USE_ON_ALL_EXCEPT', 2);
+define('ADD_JS_USE_ONLY_ON', 3);
+define('ADD_JS_LIST_PATH', 'admin/config/add-js');
+define('ADD_JS_ADD_PATH', 'admin/config/add-js/add');
+
+/**
+ * Returns the textual explaination of the usage option
+ *
+ * @param int $value
+ *
+ * @return string
+ */
+function add_js_usage_option_text($value) {
+  switch ($value) {
+    case 1:
+      return t('Use on all pages');
+    case 2:
+      return t('Use on all pages except those specified');
+    case 3:
+      return t('Only use on specified pages');
+  }
+}
+
+/**
+ * Implements hook_preprocess_page
+ *
+ * Adds JavaScripts from the database to the page header if conditions are met
+ *
+ * @param array $variables
+ */
+function add_js_preprocess_page(&$variables) {
+  add_js_to_scope('header');
+}
+
+/**
+ * Implements hook_footer
+ *
+ * Adds JavaScripts from the database to the page header if conditions are met
+ *
+ * @param array $variables
+ */
+function add_js_footer($main = 0) {
+  add_js_to_scope('footer');
+}
+
+/**
+ * Called to add JS to the page scope at the right time in the execution
+ *
+ * @param string $scope
+ *   The scope to add the JS to. Either hreader or footer
+ */
+function add_js_to_scope($scope) {
+  $sql    = 'SELECT id, title, usage_option, javascript, paths, scope '
+    . 'FROM {add_js} WHERE scope = \'%s\' ORDER BY id';
+  $result = db_query($sql, $scope);
+
+  $path  = $_GET['q'];
+  $alias = drupal_get_path_alias($path);
+  $uri   = $_SERVER['REQUEST_URI'];
+  if ($uri === '/') {
+    $uri = '<front>';
+  }
+
+  while ($row = db_fetch_object($result)) {
+    // Make a comment for the JS to make it easier to identify in the source
+    $comment = "//Add js: $row->title \n";
+    switch ($row->usage_option) {
+      case ADD_JS_USE_ON_ALL :
+        drupal_add_js($comment . $row->javascript, 'inline', $scope);
+        break;
+      case ADD_JS_USE_ON_ALL_EXCEPT :
+        $paths = add_js_get_paths_array($row->paths);
+        if (empty($paths[$path]) && empty($paths[$alias]) && empty($paths[$uri])) {
+          drupal_add_js($comment . $row->javascript, 'inline', $scope);
+        }
+        break;
+      case ADD_JS_USE_ONLY_ON :
+        $paths = add_js_get_paths_array($row->paths);
+        if (!empty($paths[$path]) || !empty($paths[$alias]) || !empty($paths[$uri])) {
+          drupal_add_js($comment . $row->javascript, 'inline', $scope);
+        }
+        break;
+    }
+  }
+}
+
+/**
+ * Converts the paths filed in the database to an array
+ *
+ * @param string $paths
+ *
+ * @return array
+ */
+function add_js_get_paths_array($paths) {
+  $array        = explode("\n", $paths);
+  $return_array = array();
+  foreach ($array as $value) {
+    $return_array[trim($value)] = trim($value);
+  }
+
+  return $return_array;
+}
+
+/**
+ * Implements hook_menu()
+ *
+ * @return array $items
+ */
+function add_js_menu() {
+  $items = array();
+
+  // Default config
+  $items[ADD_JS_LIST_PATH]               = array(
+    'title'            => t('Add JS'),
+    'page callback'    => 'add_js_list',
+    'access arguments' => array('Administer Add JS Module'),
+    'type'             => MENU_NORMAL_ITEM,
+  );
+  $items[ADD_JS_ADD_PATH]                = array(
+    'title'            => t('Add New JavaScript to pages'),
+    'page callback'    => 'drupal_get_form',
+    'page arguments'   => array(add_js_add_new_js_form),
+    'access arguments' => array('Administer Add JS Module'),
+    'type'             => MENU_NORMAL_ITEM,
+  );
+  $items['admin/config/add-js/edit/%']   = array(
+    'title'            => NULL,
+    'title callback'   => 'add_js_title_callback',
+    'title arguments'  => array(4, t('Edit')),
+    'page callback'    => 'drupal_get_form',
+    'page arguments'   => array('add_js_edit_existing_js_form', 4),
+    'access arguments' => array('Administer Add JS Module'),
+    'type'             => MENU_CALLBACK,
+  );
+  $items['admin/config/add-js/delete/%'] = array(
+    'title'            => NULL,
+    'title callback'   => 'add_js_title_callback',
+    'title arguments'  => array(4, t('Delete')),
+    'page callback'    => 'drupal_get_form',
+    'page arguments'   => array('add_js_delete_existing_js_form', 4),
+    'access arguments' => array('Administer Add JS Module'),
+    'type'             => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+/**
+ * Implementation of hook_perm().
+ */
+function add_js_perm() {
+  return array('Administer Add JS Module');
+}
+
+/**
+ * Title callback for existing JavaScript items
+ *
+ * @param int $js_id
+ * @param string $action
+ *   Whether this is the Edit or Delete page
+ *
+ * @return string
+ */
+function add_js_title_callback($js_id, $action) {
+  $title = db_result(db_query(
+      "SELECT title FROM {add_js} WHERE id = %d", $js_id
+  ));
+
+  return t(
+    '!action JavaScript: !title', array(
+    '!action' => $action,
+    '!title'  => $title
+    )
+  );
+}
+
+/**
+ * Page callback for the list of current JavaScripts
+ *
+ * @return string
+ */
+function add_js_list() {
+  // Add a link to the Add new JS page
+  $output = '<p>' . l(t('Add new JavaScript'), ADD_JS_ADD_PATH) . '</p>';
+
+  // Build the table
+  $header = _add_js_retrieve_list_header();
+  $rows   = _add_js_retrieve_list_rows();
+  $output .= theme('table', $header, $rows);
+  $output .= theme('pager', 5, 0, 0);
+
+  return $output;
+}
+
+/**
+ * Returns the table headings array for the list page
+ *
+ * @return array
+ */
+function _add_js_retrieve_list_header() {
+  $header = array(
+    t('Title'),
+    t('Usage Option'),
+    t('Scope'),
+    t('Edit'),
+    t('Delete'),
+  );
+
+  return $header;
+}
+
+/**
+ * Returns the table rows array for the list page
+ *
+ * @return array
+ */
+function _add_js_retrieve_list_rows() {
+  $sql       = 'SELECT id, title, usage_option, scope FROM {add_js} '
+    . 'ORDER BY id DESC';
+  $count_sql = 'SELECT count(1) FROM {add_js}';
+  $result    = pager_query($sql, 50, 0, $count_sql);
+
+  $rows = array();
+  while ($row  = db_fetch_object($result)) {
+    $title  = $row->title;
+    $option = add_js_usage_option_text($row->usage_option);
+    $scope  = $row->scope;
+    $edit   = l('Edit', 'admin/config/add-js/edit/' . $row->id);
+    $delete = l('Delete', 'admin/config/add-js/delete/' . $row->id);
+
+    $rows[] = array($title, $option, $scope, $edit, $delete);
+  }
+
+  return $rows;
+}
+
+/**
+ * Implements hook_form
+ *
+ * This is the form for adding new JavaScripts to pages
+ *
+ * @param array $form_state
+ *
+ * @return array
+ */
+function add_js_add_new_js_form(&$form_state) {
+  $form = array();
+
+  $form['title'] = array(
+    '#type'          => 'textfield',
+    '#title'         => t('Title'),
+    '#description'   => t('A unique name for this JavaScript'),
+    '#default_value' => NULL,
+    '#required'      => TRUE,
+  );
+
+  $form['javascript'] = array(
+    '#type'          => 'textarea',
+    '#title'         => t('JavaScript'),
+    '#description'   => t('Do not include the opening and closing script tags'),
+    '#default_value' => NULL,
+    '#required'      => TRUE,
+  );
+
+  // Add radio to choose the scope option
+  $form['scope'] = array(
+    '#type'          => 'radios',
+    '#title'         => t('Scope'),
+    '#description'   => t('Where should this JavaScript be placed within '
+      . 'the source code'),
+    '#options'       => array(
+      'footer' => 'Footer',
+      'header' => 'Header',
+    ),
+    '#default_value' => 'footer',
+    '#required'      => TRUE,
+  );
+
+  // Add radio to choose usage option
+  $form['usage_option'] = array(
+    '#type'          => 'radios',
+    '#title'         => t('Usage Option'),
+    '#description'   => t('Where should this JavaScript be used'),
+    '#options'       => array(
+      ADD_JS_USE_ON_ALL        => add_js_usage_option_text(
+        ADD_JS_USE_ON_ALL
+      ),
+      ADD_JS_USE_ON_ALL_EXCEPT => add_js_usage_option_text(
+        ADD_JS_USE_ON_ALL_EXCEPT
+      ),
+      ADD_JS_USE_ONLY_ON       => add_js_usage_option_text(
+        ADD_JS_USE_ONLY_ON
+      ),
+    ),
+    '#default_value' => ADD_JS_USE_ON_ALL,
+    '#required'      => TRUE,
+  );
+
+  $form['paths'] = array(
+    '#type'          => 'textarea',
+    '#title'         => t('Paths to match against the usage option'),
+    '#description'   => t('Use Drupal paths, one per line'),
+    '#default_value' => NULL,
+    '#required'      => FALSE,
+  );
+
+  $form['submit'] = array(
+    '#type'  => 'submit',
+    '#value' => t('Save JavaScript')
+  );
+
+  return $form;
+}
+
+/**
+ * Implements hook_form_validate
+ *
+ * This is the validator for the add_js_add_new_js_form form
+ *
+ * @param array $form
+ * @param array $form_state
+ */
+function add_js_add_new_js_form_validate(&$form, &$form_state) {
+  // The title and JavaScript fields are mandatory so are already taken care of
+  // The only other validation is on the Usage Options & Paths combination
+  // If this is for use on specified pages only make sure the paths
+  // value is not empty
+  if (
+    $form_state['values']['usage_option'] == ADD_JS_USE_ON_ALL_EXCEPT ||
+    $form_state['values']['usage_option'] == ADD_JS_USE_ONLY_ON
+  ) {
+    if (mb_strlen(trim($form_state['values']['paths'])) == 0) {
+      form_set_error('paths', t('If this is for use on specified pages only '
+          . 'make sure the paths textarea is not empty'));
+    }
+  }
+}
+
+/**
+ * Implements hook_form_submit
+ *
+ * This is the submit handler for the add_js_add_new_js_form form
+ *
+ * @param array $form
+ * @param array $form_state
+ */
+function add_js_add_new_js_form_submit(&$form, &$form_state) {
+  // Add a new row to the add_js table
+  $title      = $form_state['values']['title'];
+  $javascript = $form_state['values']['javascript'];
+  $option     = $form_state['values']['usage_option'];
+  $scope      = $form_state['values']['scope'];
+  $paths      = $form_state['values']['paths'];
+
+  db_query(
+    "INSERT INTO add_js (title, usage_option, scope, javascript, paths) "
+    . "values ('%s', %d, '%s', '%s', '%s')", $title, $option, $scope, $javascript, $paths
+  );
+
+  drupal_goto(ADD_JS_LIST_PATH);
+}
+
+/**
+ * Implements hook_form
+ *
+ * This is the form for editing existing JavaScripts
+ *
+ * @param array $form_state
+ * @param int $id
+ *   The id of the JS to edit
+ *
+ * @return array $form
+ */
+function add_js_edit_existing_js_form(&$form_state, $id) {
+
+  // put the ID in storage for the Validate and Submit handlers
+  $form_state['storage']['add_js_id'] = $id;
+
+  $existing = db_fetch_object(db_query("SELECT id, title, usage_option, scope, "
+      . "javascript, paths FROM add_js WHERE id = %d", $id));
+
+  $form = array();
+
+  $form['title'] = array(
+    '#type'          => 'textfield',
+    '#title'         => t('Title'),
+    '#description'   => t('A unique name for this JavaScript'),
+    '#default_value' => $existing->title,
+    '#required'      => TRUE,
+  );
+
+  $form['javascript'] = array(
+    '#type'          => 'textarea',
+    '#title'         => t('JavaScript'),
+    '#description'   => t('Do not include the opening and closing script tags'),
+    '#default_value' => $existing->javascript,
+    '#required'      => TRUE,
+  );
+
+  // Add radio to choose the scope option
+  $form['scope'] = array(
+    '#type'          => 'radios',
+    '#title'         => t('Scope'),
+    '#description'   => t('Where should this JavaScript be placed within '
+      . 'the source code'),
+    '#options'       => array(
+      'footer' => 'Footer',
+      'header' => 'Header',
+    ),
+    '#default_value' => $existing->scope,
+    '#required'      => TRUE,
+  );
+
+  // Add radio to choose usage option
+  $form['usage_option'] = array(
+    '#type'          => 'radios',
+    '#title'         => t('Usage Option'),
+    '#description'   => t('Where should this JavaScript be used'),
+    '#options'       => array(
+      ADD_JS_USE_ON_ALL        => add_js_usage_option_text(
+        ADD_JS_USE_ON_ALL
+      ),
+      ADD_JS_USE_ON_ALL_EXCEPT => add_js_usage_option_text(
+        ADD_JS_USE_ON_ALL_EXCEPT
+      ),
+      ADD_JS_USE_ONLY_ON       => add_js_usage_option_text(
+        ADD_JS_USE_ONLY_ON
+      ),
+    ),
+    '#default_value' => $existing->usage_option,
+  );
+
+  $form['paths'] = array(
+    '#type'          => 'textarea',
+    '#title'         => t('Paths to match against the usage option'),
+    '#description'   => t('Use Drupal paths, one per line'),
+    '#default_value' => $existing->paths,
+    '#required'      => FALSE,
+  );
+
+  $form['submit'] = array(
+    '#type'  => 'submit',
+    '#value' => t('Save Edited JavaScript')
+  );
+
+  // Use the same validator as the add new form as we are validating the same data
+  $form['#validate'][] = 'add_js_add_new_js_form_validate';
+
+  return $form;
+}
+
+/**
+ * Implements hook_form_submit
+ *
+ * This is the submit handler for the  add_js_edit_existing_js_form form
+ *
+ * @param array $form
+ * @param array $form_state
+ */
+function add_js_edit_existing_js_form_submit(&$form, &$form_state) {
+  // Add a new row to the add_js table
+  $id         = $form_state['storage']['add_js_id'];
+  $title      = $form_state['values']['title'];
+  $javascript = $form_state['values']['javascript'];
+  $option     = $form_state['values']['usage_option'];
+  $scope      = $form_state['values']['scope'];
+  $paths      = $form_state['values']['paths'];
+
+  db_query(
+    "UPDATE {add_js} SET "
+    . "title = '%s',"
+    . "javascript = '%s',"
+    . "usage_option = %d,"
+    . "scope = '%s',"
+    . "paths = '%s' WHERE id = %d", $title, $javascript, $option, $scope, $paths, $id
+  );
+
+  drupal_goto(ADD_JS_LIST_PATH);
+}
+
+/**
+ * Implements hook_form
+ *
+ * This is the form for deleting existing JavaScripts
+ *
+ * @param array $form_state
+ * @param int $id
+ *   The id of the JS to edit
+ *
+ * @return array
+ */
+function add_js_delete_existing_js_form(&$form_state, $id) {
+
+  $form_state['storage']['add_js_id'] = $id;
+
+  $existing = db_fetch_object(db_query("SELECT id, title, usage_option, "
+      . "javascript, paths FROM add_js WHERE id = %d", $id));
+
+  $form        = array();
+  $question    = t('Are you sure you want to delete: ' . $existing->title);
+  $path        = ADD_JS_LIST_PATH;
+  $description = t('Pressing the delete button will permenantly delete the '
+    . 'JS: ' . $existing->title);
+  $yes         = t('Delete ' . $existing->title . ' permenantly');
+  $no          = t('Go back to the add js list page');
+
+  // Return a standard return form
+  return confirm_form($form, $question, $path, $description, $yes, $no);
+}
+
+/**
+ * Implements hook_form_submit
+ *
+ * Does the actual deleting of the js entry
+ *
+ * @param array $form
+ * @param array $form_state
+ */
+function add_js_delete_existing_js_form_submit(&$form, &$form_state) {
+  $id = $form_state['storage']['add_js_id'];
+
+  db_query(
+    "DELETE FROM {add_js} WHERE id = %d", $id
+  );
+
+  drupal_goto(ADD_JS_LIST_PATH);
+}
