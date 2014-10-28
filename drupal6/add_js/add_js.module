@@ -62,13 +62,6 @@ function add_js_to_scope($scope) {
     . 'FROM {add_js} WHERE scope = \'%s\' ORDER BY id';
   $result = db_query($sql, $scope);
 
-  $path  = $_GET['q'];
-  $alias = drupal_get_path_alias($path);
-  $uri   = $_SERVER['REQUEST_URI'];
-  if ($uri === '/') {
-    $uri = '<front>';
-  }
-
   while ($row = db_fetch_object($result)) {
     // Make a comment for the JS to make it easier to identify in the source
     $comment = "//Add js: $row->title \n";
@@ -77,14 +70,14 @@ function add_js_to_scope($scope) {
         drupal_add_js($comment . $row->javascript, 'inline', $scope);
         break;
       case ADD_JS_USE_ON_ALL_EXCEPT :
-        $paths = add_js_get_paths_array($row->paths);
-        if (empty($paths[$path]) && empty($paths[$alias]) && empty($paths[$uri])) {
+        $match = turner_add_js_match_paths_to_current_path($row->paths);
+        if ($match === FALSE) {
           drupal_add_js($comment . $row->javascript, 'inline', $scope);
         }
         break;
       case ADD_JS_USE_ONLY_ON :
-        $paths = add_js_get_paths_array($row->paths);
-        if (!empty($paths[$path]) || !empty($paths[$alias]) || !empty($paths[$uri])) {
+        $match = add_js_match_paths_to_current_path($row->paths);
+        if ($match === TRUE) {
           drupal_add_js($comment . $row->javascript, 'inline', $scope);
         }
         break;
@@ -93,20 +86,27 @@ function add_js_to_scope($scope) {
 }
 
 /**
- * Converts the paths filed in the database to an array
+ * Matches the current path to the paths on this javascript entry
+ * Functionlay similar to how blocks works
  *
  * @param string $paths
  *
- * @return array
+ * @return bool
  */
-function add_js_get_paths_array($paths) {
-  $array        = explode("\n", $paths);
-  $return_array = array();
-  foreach ($array as $value) {
-    $return_array[trim($value)] = trim($value);
+function add_js_match_paths_to_current_path($paths) {
+  if (!empty($paths)) {
+    $path       = drupal_get_path_alias($_GET['q']);
+    // Compare with the internal and path alias (if any).
+    $page_match = drupal_match_path($path, $paths);
+    if ($path != $_GET['q']) {
+      $page_match = $page_match || drupal_match_path($_GET['q'], $paths);
+    }
+  }
+  else {
+    $page_match = TRUE;
   }
 
-  return $return_array;
+  return (bool) $page_match;
 }
 
 /**
@@ -441,7 +441,9 @@ function add_js_edit_existing_js_form(&$form_state, $id) {
   $form['paths'] = array(
     '#type'          => 'textarea',
     '#title'         => t('Paths to match against the usage option'),
-    '#description'   => t('Use Drupal paths, one per line'),
+    '#description'   => t("Enter one page per line as Drupal paths. The '*' "
+      . "character is a wildcard. Example paths are 'shows' for the Shows page "
+      . "and 'show*' for every page where the URL starts wwith 'show'."),
     '#default_value' => $existing->paths,
     '#required'      => FALSE,
   );
