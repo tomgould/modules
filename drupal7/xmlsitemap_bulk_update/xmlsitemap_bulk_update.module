@@ -2,7 +2,7 @@
 
 /**
  * @file
- *   Provides a method or adding or excludin all the available items to your
+ *   Provides a method or adding or excluding all the available items to your
  *   sitemap from one page
  */
 
@@ -25,8 +25,6 @@ function xmlsitemap_bulk_update_menu() {
 
 /**
  * Implements hook_form();
- * 
- * @param array $form_state
  */
 function xmlsitemap_bulk_update_settings_form() {
   $entities = xmlsitemap_get_link_info(NULL, TRUE);
