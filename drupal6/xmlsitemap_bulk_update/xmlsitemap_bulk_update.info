@@ -1,4 +1,5 @@
 name = XML Sitemap Bulk Update
 description = Bulk updates all the bundles included in the XML sitemap settings
 core = 6.x
+package = XML sitemap
 dependencies[] = xmlsitemap
