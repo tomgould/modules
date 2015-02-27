@@ -117,12 +117,14 @@ function add_js_menu() {
   // Default config
   $items[ADD_JS_LIST_PATH]        = array(
     'title'           => t('Add JS'),
+    'description'     => t('Allows the admin user to add JavaScript to pages form the admin UI'),
     'page callback'   => 'add_js_list',
     'access arguments' => array('administer add js'),
     'type'            => MENU_NORMAL_ITEM,
   );
   $items[ADD_JS_ADD_PATH]         = array(
     'title'           => t('Add New JavaScript to pages'),
+    'description'     => t('Add a new JavaScript'),
     'page callback'   => 'drupal_get_form',
     'page arguments'  => array('add_js_add_new_js_form'),
     'access arguments' => array('administer add js'),
@@ -130,6 +132,7 @@ function add_js_menu() {
   );
   $items['admin/config/media/add-js/edit/%']   = array(
     'title'           => 'Edit JS',
+    'description'     => t('Edit a JavaScript'),
     'title callback'  => 'add_js_title_callback',
     'title arguments' => array(4, t('Edit')),
     'page callback'   => 'drupal_get_form',
@@ -139,6 +142,7 @@ function add_js_menu() {
   );
   $items['admin/config/media/add-js/delete/%'] = array(
     'title'           => 'Delete JS',
+    'description'     => t('Delete a JavaScript'),
     'title callback'  => 'add_js_title_callback',
     'title arguments' => array(4, t('Delete')),
     'page callback'   => 'drupal_get_form',
