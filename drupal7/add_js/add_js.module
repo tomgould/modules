@@ -8,8 +8,8 @@
 define('ADD_JS_USE_ON_ALL', 1);
 define('ADD_JS_USE_ON_ALL_EXCEPT', 2);
 define('ADD_JS_USE_ONLY_ON', 3);
-define('ADD_JS_LIST_PATH', 'admin/config/add-js');
-define('ADD_JS_ADD_PATH', 'admin/config/add-js/add');
+define('ADD_JS_LIST_PATH', 'admin/config/media/add-js');
+define('ADD_JS_ADD_PATH', 'admin/config/media/add-js/add');
 
 /**
  * Returns the textual explaination of the usage option
@@ -128,7 +128,7 @@ function add_js_menu() {
     'access arguments' => array('administer add js'),
     'type'            => MENU_NORMAL_ITEM,
   );
-  $items['admin/config/add-js/edit/%']   = array(
+  $items['admin/config/media/add-js/edit/%']   = array(
     'title'           => 'Edit JS',
     'title callback'  => 'add_js_title_callback',
     'title arguments' => array(4, t('Edit')),
@@ -137,7 +137,7 @@ function add_js_menu() {
     'access arguments' => array('administer add js'),
     'type'            => MENU_CALLBACK,
   );
-  $items['admin/config/add-js/delete/%'] = array(
+  $items['admin/config/media/add-js/delete/%'] = array(
     'title'           => 'Delete JS',
     'title callback'  => 'add_js_title_callback',
     'title arguments' => array(4, t('Delete')),
@@ -246,8 +246,8 @@ function _add_js_retrieve_list_rows() {
     $option = add_js_usage_option_text($row->usage_option);
     $scope  = $row->scope;
     $weight = $row->weight;
-    $edit   = l('Edit', 'admin/config/add-js/edit/' . $row->id);
-    $delete = l('Delete', 'admin/config/add-js/delete/' . $row->id);
+    $edit   = l('Edit', 'admin/config/media/add-js/edit/' . $row->id);
+    $delete = l('Delete', 'admin/config/media/add-js/delete/' . $row->id);
 
     $rows[] = array($title, $option, $scope, $weight, $edit, $delete);
   }
