@@ -1,0 +1,7 @@
+; $Id$
+name = Language Change
+description = Programmatically change the language of content
+package = Turner Broadcasting Systems
+version = 7.x-1.0
+core = 7.x
+
