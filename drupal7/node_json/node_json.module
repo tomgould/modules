@@ -6,7 +6,7 @@
  * @return string
  */
 function node_json_menu() {
-  $items = array();
+  $items                      = array();
   $items['node-json/types']   = array(
     'title'            => NULL,
     'page callback'    => 'node_json_get_all_content_types',
@@ -21,7 +21,7 @@ function node_json_menu() {
     'access arguments' => array('access content'),
     'type'             => MENU_CALLBACK,
   );
-  $items['node/%/json'] = array(
+  $items['node/%/json']       = array(
     'title'            => NULL,
     'page callback'    => 'node_json_node_in_json',
     'page arguments'   => array(1),
@@ -40,8 +40,12 @@ function node_json_menu() {
 function node_json_node_in_json($nid) {
   $node = node_load($nid);
 
-  if (is_object($node)) {
+  if (is_object($node) && $node->status == 1) {
     print json_encode($node);
+    die;
+  }
+  else {
+    drupal_access_denied();
     die;
   }
 }
@@ -59,7 +63,7 @@ function node_json_get_all_nids_by_type($type) {
     ->orderBy('n.nid');
   $result = $query->execute();
 
-  $nids   = array();
+  $nids = array();
   foreach ($result as $row) {
     $nids[] = $row->nid;
   }
@@ -76,7 +80,7 @@ function node_json_get_all_nids_by_type($type) {
 function node_json_get_all_content_types() {
   $result = db_query("SELECT DISTINCT type FROM node WHERE status = 1 ORDER BY type");
 
-  $query = db_select('node', 'n')
+  $query  = db_select('node', 'n')
     ->distinct()
     ->fields('n', array('type'))
     ->condition('n.status', 1)
@@ -84,7 +88,7 @@ function node_json_get_all_content_types() {
     ->orderBy('n.type');
   $result = $query->execute();
 
-  $types  = array();
+  $types = array();
   foreach ($result as $row) {
     $types[] = $row->type;
   }
