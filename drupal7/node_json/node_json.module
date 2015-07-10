@@ -78,8 +78,6 @@ function node_json_get_all_nids_by_type($type) {
  * @param string $type
  */
 function node_json_get_all_content_types() {
-  $result = db_query("SELECT DISTINCT type FROM node WHERE status = 1 ORDER BY type");
-
   $query  = db_select('node', 'n')
       ->distinct()
       ->fields('n', array('type'))
