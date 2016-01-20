@@ -2,7 +2,13 @@
 
 /**
  * @file
- * Drush commands for  cron_downloader
+ *    Drush commands for cron_downloader
+ */
+
+/**
+ * Implements hook_drush_command()
+ * 
+ * @return array
  */
 function cron_downloader_drush_command() {
   $items = array();
@@ -30,8 +36,7 @@ function drush_cron_downloader_save_rss($url = NULL, $destination = 'public') {
     return drush_set_error(dt("No URL was supplied to cron_downloader_download"));
   }
 
-  $basename = basename($url);
-  $uri = "$destination://cron_downloader/$basename";
+  $uri = cron_downloader_basename($url);
 
   cron_downloader_download_external_file($url, $uri, FILE_EXISTS_REPLACE, TRUE);
 }

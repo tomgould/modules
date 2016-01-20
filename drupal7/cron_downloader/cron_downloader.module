@@ -73,7 +73,7 @@ function cron_downloader_download_external_file($url, $uri, $save_mode = FILE_EX
  */
 function cron_downloader_file_grabber($files = array(), $destination = 'public') {
   foreach ($files as $file) {
-    $basename = cron_downloader_file_namer($file);
+    cron_downloader_basename($file, $destination);
     $uri = "$destination://cron_downloader/$basename";
     watchdog("cron_downloader", "Downloading: $file to $uri");
     cron_downloader_download_external_file($file, $uri, FILE_EXISTS_REPLACE, TRUE);
@@ -100,4 +100,10 @@ function cron_downloader_file_namer($str = '') {
   $str = str_replace('%', '-', $str);
 
   return $str;
+}
+
+function cron_downloader_basename($url, $destination) {
+  $basename = cron_downloader_file_namer($url);
+
+  return "$destination://cron_downloader/$basename";
 }
