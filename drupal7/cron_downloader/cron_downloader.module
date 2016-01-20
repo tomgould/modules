@@ -75,7 +75,7 @@ function cron_downloader_file_grabber($files = array(), $destination = 'public')
   foreach ($files as $file) {
     $basename = cron_downloader_file_namer($file);
     $uri = "$destination://cron_downloader/$basename";
-    watchdog("cron_downloader", "Downloading: $url to $uri");
+    watchdog("cron_downloader", "Downloading: $file to $uri");
     cron_downloader_download_external_file($file, $uri, FILE_EXISTS_REPLACE, TRUE);
   }
 }
