@@ -102,7 +102,7 @@ function cron_downloader_file_namer($str = '') {
 }
 
 /**
- * Returns a URL based on the URL and destination filesystem
+ * Returns a URI based on the URL and destination filesystem
  *
  * @param sting $url
  * @param sting $destination
