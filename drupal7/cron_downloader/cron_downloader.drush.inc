@@ -36,7 +36,7 @@ function drush_cron_downloader_save_rss($url = NULL, $destination = 'public') {
     return drush_set_error(dt("No URL was supplied to cron_downloader_download"));
   }
 
-  $uri = cron_downloader_basename($url, $destination);
+  $uri = cron_downloader_uri($url, $destination);
   watchdog("cron_downloader", "Downloading: $url to $uri");
 
   cron_downloader_download_external_file($url, $uri, FILE_EXISTS_REPLACE, TRUE);
