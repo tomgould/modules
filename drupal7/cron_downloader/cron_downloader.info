@@ -1,0 +1,5 @@
+name = Cron Downloader
+description = Downloads thing on cron
+package = Tom Gould
+core = 7.x
+
