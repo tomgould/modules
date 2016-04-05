@@ -1,3 +1,3 @@
 name = Node JSON
-description = Exports node info & nodes to JSON for content migration
+description = Exports nodes to JSON for the content migration
 core = 6.x

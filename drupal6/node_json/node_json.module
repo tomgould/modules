@@ -6,22 +6,9 @@
  * @return string
  */
 function node_json_menu() {
-  $items                      = array();
-  $items['node-json/types']   = array(
-    'title'            => NULL,
-    'page callback'    => 'node_json_get_all_content_types',
-    'page arguments'   => array(2),
-    'access arguments' => array('access content'),
-    'type'             => MENU_CALLBACK,
-  );
-  $items['node-json/nodes/%'] = array(
-    'title'            => NULL,
-    'page callback'    => 'node_json_get_all_nids_by_type',
-    'page arguments'   => array(2),
-    'access arguments' => array('access content'),
-    'type'             => MENU_CALLBACK,
-  );
-  $items['node/%/json']       = array(
+  $items = array();
+
+  $items['node/%/json'] = array(
     'title'            => NULL,
     'page callback'    => 'node_json_node_in_json',
     'page arguments'   => array(1),
@@ -29,7 +16,71 @@ function node_json_menu() {
     'type'             => MENU_CALLBACK,
   );
 
+  $items['node-json/nodes/%'] = array(
+    'title'            => NULL,
+    'page callback'    => 'node_json_get_all_nids_by_type',
+    'page arguments'   => array(2),
+    'access arguments' => array('access content'),
+    'type'             => MENU_CALLBACK,
+  );
+
+  $items['node-json/types'] = array(
+    'title'            => NULL,
+    'page callback'    => 'node_json_get_all_content_types',
+    'page arguments'   => array(2),
+    'access arguments' => array('access content'),
+    'type'             => MENU_CALLBACK,
+  );
+
+  $items['node-json/users'] = array(
+    'title'            => NULL,
+    'page callback'    => 'node_json_get_all_uids',
+    'access arguments' => array('access content'),
+    'type'             => MENU_CALLBACK,
+  );
+
+  $items['node-json/user/%'] = array(
+    'title'            => NULL,
+    'page callback'    => 'node_json_get_user',
+    'page arguments'   => array(2),
+    'access arguments' => array('access content'),
+    'type'             => MENU_CALLBACK,
+  );
+
   return $items;
+}
+
+
+/**
+ * Prints the list of UIDs
+ *
+ * @param string $type
+ */
+function node_json_get_all_uids() {
+  $result = db_query("SELECT uid FROM users WHERE uid > 1  ORDER BY uid DESC");
+  $uids   = array();
+  while ($row    = db_fetch_object($result)) {
+    $uids[] = $row->uid;
+  }
+
+  print json_encode($uids);
+  die;
+
+}
+
+/**
+ * Prints the JSON representation of the user supplied
+ *
+ * @param string $type
+ */
+function node_json_get_user($uid) {
+  $user = user_load($uid);
+
+  $user->newsletter_subscrbed = simplenews_user_is_subscribed($user->mail, 142, TRUE);
+
+  print json_encode($user, JSON_PRETTY_PRINT);
+  die;
+
 }
 
 /**
@@ -39,14 +90,13 @@ function node_json_menu() {
  */
 function node_json_node_in_json($nid) {
   $node = node_load($nid);
+  $user     = user_load($node->uid);
+  $comments = node_json_comment_data($node);
 
-  if (is_object($node) && $node->status == '1') {
-    $node->drupal_core_version = 6;
-    print json_encode($node);
-    die;
-  }
-  else {
-    drupal_access_denied();
+  if (is_object($node)) {
+    $node->user_account = $user;
+    $node->old_comments = $comments;
+    print json_encode($node, JSON_PRETTY_PRINT);
     die;
   }
 }
@@ -57,13 +107,13 @@ function node_json_node_in_json($nid) {
  * @param string $type
  */
 function node_json_get_all_nids_by_type($type) {
-  $result = db_query("SELECT nid FROM node WHERE status = 1 AND type = '%s' ORDER BY nid", array('%s' => $type));
+  $result = db_query("SELECT nid FROM node WHERE type = '%s' ORDER BY nid ", array('%s' => $type));
   $nids   = array();
   while ($row    = db_fetch_object($result)) {
     $nids[] = $row->nid;
   }
 
-  print json_encode($nids);
+  print json_encode($nids, JSON_PRETTY_PRINT);
   die;
 }
 
@@ -73,12 +123,175 @@ function node_json_get_all_nids_by_type($type) {
  * @param string $type
  */
 function node_json_get_all_content_types() {
-  $result = db_query("SELECT DISTINCT type FROM node WHERE status = 1 ORDER BY type");
+  $result = db_query("SELECT DISTINCT type FROM node ORDER BY type");
   $types  = array();
   while ($row    = db_fetch_object($result)) {
     $types[] = $row->type;
   }
 
-  print json_encode($types);
+  print json_encode($types, JSON_PRETTY_PRINT);
   die;
+}
+
+
+/**
+ * Hacked version of the comment_render function
+ * 
+ * @global type $user
+ * @param type $node
+ * @param type $cid
+ * @return type
+ */
+function node_json_comment_data($node, $cid = 0) {
+  global $user;
+
+  $output = array();
+
+  if (user_access('access comments')) {
+    // Pre-process variables.
+    $nid = $node->nid;
+    if (empty($nid)) {
+      $nid = 0;
+    }
+
+    $mode              = _comment_get_display_setting('mode', $node);
+    $order             = _comment_get_display_setting('sort', $node);
+    $comments_per_page = _comment_get_display_setting('comments_per_page', $node);
+
+    if ($cid && is_numeric($cid)) {
+      // Single comment view.
+      $query      = 'SELECT
+                      c.cid,
+                      c.pid,
+                      c.nid,
+                      c.subject,
+                      c.comment,
+                      c.format,
+                      c.timestamp,
+                      c.name,
+                      u.mail,
+                      c.homepage,
+                      c.hostname,
+                      u.uid,
+                      u.name AS registered_name,
+                      u.signature,
+                      u.signature_format,
+                      u.picture,
+                      u.data,
+                      c.status
+                    FROM
+                      {comments} c
+                      INNER JOIN {users} u ON c.uid = u.uid
+                    WHERE
+                      c.cid = %d';
+      $query_args = array($cid);
+      if (!user_access('administer comments')) {
+        $query .= ' AND c.status = %d';
+        $query_args[] = COMMENT_PUBLISHED;
+      }
+
+      $query  = db_rewrite_sql($query, 'c', 'cid');
+      $result = db_query($query, $query_args);
+
+      if ($comment = db_fetch_object($result)) {
+        $comment->name = $comment->uid ? $comment->registered_name : $comment->name;
+        $links         = module_invoke_all('link', 'comment', $comment, 1);
+        drupal_alter('link', $links, $node, $comment);
+
+        $output[] = $comment;
+      }
+    }
+    else {
+      // Multiple comment view
+      $query_count = 'SELECT COUNT(*) FROM {comments} c WHERE c.nid = %d';
+      $query       = 'SELECT
+                        c.cid as cid,
+                        c.pid,
+                        c.nid,
+                        c.subject,
+                        c.comment,
+                        c.format,
+                        c.timestamp,
+                        c.name,
+                        u.mail,
+                        c.homepage,
+                        c.hostname,
+                        u.uid,
+                        u.name AS registered_name,
+                        u.signature,
+                        u.signature_format,
+                        u.picture,
+                        u.data,
+                        c.thread,
+                        c.status
+                      FROM
+                        {comments} c
+                        INNER JOIN {users} u ON c.uid = u.uid
+                      WHERE
+                        c.nid = %d';
+
+      $query_args = array($nid);
+      if (!user_access('administer comments')) {
+        $query .= ' AND c.status = %d';
+        $query_count .= ' AND c.status = %d';
+        $query_args[] = COMMENT_PUBLISHED;
+      }
+
+      if ($order == COMMENT_ORDER_NEWEST_FIRST) {
+        if ($mode == COMMENT_MODE_FLAT_COLLAPSED || $mode == COMMENT_MODE_FLAT_EXPANDED) {
+          $query .= ' ORDER BY c.cid DESC';
+        }
+        else {
+          $query .= ' ORDER BY c.thread DESC';
+        }
+      }
+      else if ($order == COMMENT_ORDER_OLDEST_FIRST) {
+        if ($mode == COMMENT_MODE_FLAT_COLLAPSED || $mode == COMMENT_MODE_FLAT_EXPANDED) {
+          $query .= ' ORDER BY c.cid';
+        }
+        else {
+          // See comment above. Analysis reveals that this doesn't cost too
+          // much. It scales much much better than having the whole comment
+          // structure.
+          $query .= ' ORDER BY SUBSTRING(c.thread, 1, (LENGTH(c.thread) - 1))';
+        }
+      }
+      $query       = db_rewrite_sql($query, 'c', 'cid');
+      $query_count = db_rewrite_sql($query_count, 'c', 'cid');
+
+      // Start a form, for use with comment control.
+      $result = pager_query($query, 99999999999999, 0, $query_count, $query_args);
+
+      $divs     = 0;
+      $num_rows = FALSE;
+      $comments = array();
+      drupal_add_css(drupal_get_path('module', 'comment') . '/comment.css');
+      while ($comment  = db_fetch_object($result)) {
+        $comment        = drupal_unpack($comment);
+        $comment->name  = $comment->uid ? $comment->registered_name : $comment->name;
+        $comment->depth = count(explode('.', $comment->thread)) - 1;
+
+
+        if ($mode == COMMENT_MODE_FLAT_COLLAPSED) {
+          $comments[] = $comment;
+        }
+        else if ($mode == COMMENT_MODE_FLAT_EXPANDED) {
+          $comments[] = $comment;
+        }
+        else if ($mode == COMMENT_MODE_THREADED_COLLAPSED) {
+          $comments[] = $comment;
+        }
+        else if ($mode == COMMENT_MODE_THREADED_EXPANDED) {
+          $comments[] = $comment;
+        }
+
+        $num_rows = TRUE;
+      }
+      $output[] = $comments;
+    }
+
+  }
+
+  return $output;
+
 }
