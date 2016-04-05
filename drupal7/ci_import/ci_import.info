@@ -1,0 +1,4 @@
+name = CI Import
+description = Imports the nodes form the old CI site to this one via Drush
+core = 7.x
+package = Custom

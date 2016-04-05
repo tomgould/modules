@@ -1,0 +1,145 @@
+<?php
+/**
+ * @file
+ *   Main module file, Imports the nodes form the old site to the new one
+ *
+ */
+
+include drupal_get_path('module', 'ci_import') . '/ci_import.helpers.inc';
+include drupal_get_path('module', 'ci_import') . '/ci_import.importers.inc';
+
+function ci_import_menu() {
+  $items['test'] = array(
+    'title'            => t('TEST'),
+    'page callback'    => 'ci_import_test',
+    'access arguments' => array('administer ckeditor'),
+    'access callback'  => TRUE,
+    'type'             => MENU_NORMAL_ITEM,
+  );
+
+  return $items;
+}
+
+function ci_import_test() {
+  ci_import_import_content('casestudy', 'casestudy');
+
+}
+
+/**
+ * Imports all the things
+ */
+function ci_import_import_content($importer_function, $remote_type) {
+  $log_location = ci_import_get_log_location();
+  $fp           = fopen($log_location . '/ci_import_log_' . $importer_function . '-' . $remote_type . '.csv', 'w');
+
+  $columns = array(
+    'local NID',
+    'Remote NID',
+    'Local type',
+    'Remote type',
+    'Importer',
+    'Title',
+  );
+
+  fputcsv($fp, $columns, ',', '"');
+
+  $nids = ci_import_get_nids($remote_type);
+  foreach ($nids as $nid) {
+    $source = ci_import_get_node($nid);
+    $node   = call_user_func_array("ci_import_import_" . $importer_function, array($source));
+
+    echo "Imported: " . $node->type . ": " . $node->nid . " << " . $node->remote_nid . ": " . $node->title . "\n";
+
+    $csv_row = array(
+      $node->nid,
+      $node->remote_nid,
+      $node->type,
+      $remote_type,
+      $importer_function,
+      $node->title,
+    );
+
+    fputcsv($fp, $csv_row, ',', '"');
+
+    $x = empty($x) ? 0 : $x;
+    $x++;
+    if ($x >= 1) {
+      //break;
+    }
+
+  }
+
+  fclose($fp);
+
+}
+
+
+/**
+ * Deletes all the users with UID > 1
+ */
+function ci_import_purge_all_users() {
+  $query  = db_select('users', 'u');
+  $query->fields('u', array('uid'));
+  $query->condition('u.uid', '1', '>');
+  $result = $query->orderBy('u.uid')->execute();
+
+  foreach ($result as $row) {
+    user_delete($row->uid);
+    echo "Deleted user {$row->uid} \n";
+  }
+
+}
+
+/**
+ * Truncates all the tables required to purge all the content fron this site
+ */
+function ci_import_purge_all_content() {
+  global $base_url;
+
+  // The block table needs the nodeblocks deleting
+  db_query('DELETE FROM block WHERE module = \'nodeblock\';');
+
+  // Truncates the required tables
+  $result = db_query('SHOW TABLES');
+  foreach ($result as $row) {
+     $table = $row->Tables_in_ehn_new;
+
+    if (substr($table, 0, 5) == 'cache') {
+      ci_import_truncate($table);
+    }
+
+    if (substr($table, 0, 10) == 'field_data') {
+      ci_import_truncate($table);
+    }
+
+    if (substr($table, 0, 14) == 'field_revision') {
+      ci_import_truncate($table);
+    }
+
+    if (substr($table, 0, 5) == 'file_') {
+      ci_import_truncate($table);
+    }
+
+    if (substr($table, 0, 4) == 'node' && $table != 'node_type') {
+      ci_import_truncate($table);
+    }
+
+    if (substr($table, 0, 7) == 'search_') {
+      ci_import_truncate($table);
+    }
+
+    if (substr($table, 0, 7) == 'webform') {
+      ci_import_truncate($table);
+    }
+
+    if (
+      $table == 'taxonomy_index' || $table == 'url_alias' || $table == 'watchdog' || $table == 'feeds_item' || $table == 'feeds_log'
+    ) {
+      ci_import_truncate($table);
+    }
+
+    // Cleans up
+    db_query("OPTIMIZE TABLE $table");
+  }
+
+}
