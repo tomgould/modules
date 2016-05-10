@@ -1,0 +1,298 @@
+<?php
+
+/**
+ * @file
+ *   Main module file, IExports code, files and Database
+ *
+ */
+function file_backup_menu() {
+  $items['admin/config/system/backup']             = array(
+    'title'            => t('Download backups'),
+    'page callback'    => 'file_backup_download_backups',
+    'access arguments' => array('access administration pages'),
+    'type'             => MENU_NORMAL_ITEM,
+  );
+  $items['admin/config/system/backup/source-code'] = array(
+    'title'            => t('Download backup of Source Code'),
+    'page callback'    => 'file_backup_download_source',
+    'access arguments' => array('access administration pages'),
+    'type'             => MENU_LOCAL_ACTION,
+  );
+  $items['admin/config/system/backup/public']      = array(
+    'title'            => t('Download backup of Public Files'),
+    'page callback'    => 'file_backup_download_public',
+    'access arguments' => array('access administration pages'),
+    'type'             => MENU_LOCAL_ACTION,
+  );
+  $items['admin/config/system/backup/private']     = array(
+    'title'            => t('Download backup of Private Files'),
+    'page callback'    => 'file_backup_download_private',
+    'access arguments' => array('access administration pages'),
+    'type'             => MENU_LOCAL_ACTION,
+  );
+  $items['admin/config/system/backup/database']    = array(
+    'title'            => t('Download backup of Database'),
+    'page callback'    => 'file_backup_download_database',
+    'access arguments' => array('access administration pages'),
+    'type'             => MENU_LOCAL_ACTION,
+  );
+
+  return $items;
+
+}
+
+function file_backup_download_backups() {
+  return array();
+
+}
+
+/**
+ * Zips up the $dir_to_zip andcreates a zip at $zip_file_name,
+ * sends it to the browser and deletes the zip from the server
+ */
+function file_backup_download_source() {
+
+  // Replace these values
+  $dir_to_zip    = DRUPAL_ROOT;
+  $zip_file_name = variable_get('file_temporary_path', '/mnt/tmp/emptyhomenetwork6maxy6p7ih') . '/EHN_Backup_source_' . date('Y-m-d_H.i.s') . '.zip';
+  $private_files = variable_get('file_private_path', '/mnt/gfs/emptyhomenetwork6maxy6p7ih/sites/emptyhomenetwork/files-private');
+  $public_files  = variable_get('file_public_path', 'sites/emptyhomenetwork/files');
+
+  // Paths to exclude form the zip
+  $excludes = array(
+    '.git',
+    '.sass-cache',
+    $private_files,
+    $public_files
+  );
+
+  all_the_things($dir_to_zip, $zip_file_name, $excludes);
+  unlink($zip_file_name);
+
+  drupal_exit();
+
+}
+/**
+ * Zips up the $dir_to_zip andcreates a zip at $zip_file_name,
+ * sends it to the browser and deletes the zip from the server
+ */
+function file_backup_download_public() {
+
+  // Replace these values
+  $zip_file_name = variable_get('file_temporary_path', '/mnt/tmp/emptyhomenetwork6maxy6p7ih') . '/EHN_Backup_public_files_' . date('Y-m-d_H.i.s') . '.zip';
+
+  $public_files = variable_get('file_public_path', 'sites/emptyhomenetwork/files');
+
+  // Paths to exclude form the zip
+  $excludes = array(
+    '.git',
+    '.sass-cache',
+  );
+
+  all_the_things($public_files, $zip_file_name, $excludes);
+  unlink($zip_file_name);
+
+  drupal_exit();
+
+}
+
+/**
+ * Zips up the $dir_to_zip andcreates a zip at $zip_file_name,
+ * sends it to the browser and deletes the zip from the server
+ */
+function file_backup_download_private() {
+
+  // Replace these values
+  $zip_file_name = variable_get('file_temporary_path', '/mnt/tmp/emptyhomenetwork6maxy6p7ih') . '/EHN_Backup_private_files_' . date('Y-m-d_H.i.s') . '.zip';
+
+  $private_files = variable_get('file_private_path', '/mnt/gfs/emptyhomenetwork6maxy6p7ih/sites/emptyhomenetwork/files-private');
+
+  // Paths to exclude form the zip
+  $excludes = array(
+    '.git',
+    '.sass-cache',
+  );
+
+  all_the_things($private_files, $zip_file_name, $excludes);
+  unlink($zip_file_name);
+
+  drupal_exit();
+
+}
+
+
+function file_backup_download_database() {
+
+  // Dump the database
+  $file_name     = 'EHN_Backup_database_' . date('Y-m-d_H.i.s') . '.sql';
+  $database_file = variable_get('file_temporary_path', '/mnt/tmp/emptyhomenetwork6maxy6p7ih') . '/' . $file_name;
+  file_backup_db_to_file_mysqldump($database_file);
+
+  header('Content-Type: application/octet-stream');
+  header('Content-Disposition: attachment; filename=' . basename($file_name));
+  header('Expires: 0');
+  header('Cache-Control: must-revalidate');
+  header('Pragma: public');
+  header('Content-Length: ' . filesize($database_file));
+  readfile($database_file);
+
+  unlink($database_file);
+
+  drupal_exit();
+
+}
+
+/**
+ * Zips all the things and buffers the zip to your browser
+ *
+ * @param string $dir_to_zip
+ *   The dir to zip
+ * @param type $zip_file_name
+ *   The temporary writable location eg "/mnt/tmp/emptyhomenetwork6maxy6p7ih/ALLTHETHINGS.zip"
+ *
+ */
+function all_the_things($dir_to_zip, $zip_file_name, $excludes) {
+  ini_set('memory_limit', -1);
+  ini_set('output_buffering', 'On');
+  set_time_limit(600);
+
+  if (!extension_loaded('zip') || !file_exists($dir_to_zip)) {
+    watchdog('error', $dir_to_zip);
+    return false;
+  }
+
+  $zip = new ZipArchive();
+  if (!$zip->open($zip_file_name, ZIPARCHIVE::CREATE)) {
+    watchdog('error', 'Couldn\'t open Zip file');
+    return false;
+  }
+
+  $dir_to_zip = str_replace('\\', '/', realpath($dir_to_zip));
+
+  if (is_dir($dir_to_zip) === true) {
+    $files = new RecursiveIteratorIterator(
+      new RecursiveDirectoryIterator($dir_to_zip), RecursiveIteratorIterator::SELF_FIRST);
+
+    foreach ($files as $file) {
+      $file = str_replace('\\', '/', $file);
+
+      $include = TRUE;
+      foreach ($excludes as $exclude) {
+        if (strpos($file, $exclude) !== FALSE) {
+          $include = FALSE;
+          break;
+        }
+      }
+
+      // Ignore "." and ".." folders
+      if (in_array(substr($file, strrpos($file, '/') + 1), array('.', '..')))
+        continue;
+
+      $file = realpath($file);
+
+      if (is_dir($file) === true && $include === TRUE) {
+        $zip->addEmptyDir(str_replace($dir_to_zip . '/', '', $file . '/'));
+      }
+      else if (is_file($file) === true && $include === TRUE) {
+        $zip->addFromString(str_replace($dir_to_zip . '/', '', $file), file_get_contents($file));
+      }
+    }
+  }
+  else if (is_file($dir_to_zip) === true) {
+    $include = TRUE;
+    foreach ($excludes as $exclude) {
+      if (strpos($file, $exclude) !== FALSE) {
+        $include = FALSE;
+        break;
+      }
+    }
+    if ($include === TRUE) {
+      $zip->addFromString(basename($dir_to_zip), file_get_contents($dir_to_zip));
+    }
+  }
+
+  $zip->close();
+
+  header("Content-type: application/zip");
+  header("Content-Disposition: attachment; filename=" . basename($zip_file_name));
+  header("Content-length: " . filesize($zip_file_name));
+  header("Pragma: no-cache");
+  header("Expires: 0");
+  readfile("$zip_file_name");
+
+}
+
+/**
+ * Backup the databases to a file using the mysqldump command.
+ */
+function file_backup_db_to_file_mysqldump($file) {
+  $success       = FALSE;
+  $nodata_tables = array();
+  $alltables     = file_backup_get_tables();
+
+  global $databases;
+
+  $command = 'mysqldump --result-file=%file --opt -Q --host=%host --port=%port --user=%user --password=%pass %db';
+  $args    = array(
+    '%file' => $file,
+    '%host' => $databases['default']['default']['host'],
+    '%port' => isset($databases['default']['default']['port']) ? $databases['default']['default']['port'] : '3306',
+    '%user' => $databases['default']['default']['username'],
+    '%pass' => $databases['default']['default']['password'],
+    '%db'   => $databases['default']['default']['database'],
+  );
+
+  $success = file_backup_exec($command, $args);
+
+  // Get the nodata tables.
+  if ($success && !empty($nodata_tables)) {
+    $tables  = implode(' ', array_unique($nodata_tables));
+    $command = "mysqldump --no-data --opt -Q --host=%host --port=%port --user=%user --password=%pass %db $tables >> %file";
+    $success = file_backup_exec($command, $args);
+  }
+
+  return $success;
+
+}
+
+/**
+ * Get a list of tables in the db.
+ */
+function file_backup_get_tables() {
+  $out    = array();
+  // get auto_increment values and names of all tables
+  $tables = db_query("show table status", array(), array('fetch' => PDO::FETCH_ASSOC));
+  foreach ($tables as $table) {
+    // Lowercase the keys because between Drupal 7.12 and 7.13/14 the default query behavior was changed.
+    // See: http://drupal.org/node/1171866
+    $table = array_change_key_case($table);
+    if (!empty($table['engine'])) {
+      $out[$table['name']] = $table;
+    }
+  }
+
+  return $out;
+
+}
+
+/**
+ * Execute a command line command. Returns false if the function failed.
+ */
+function file_backup_exec($command, $args = array()) {
+  if (!function_exists('exec') || ini_get('safe_mode')) {
+    return FALSE;
+  }
+
+  // Escape the arguments
+  foreach ($args as $key => $arg) {
+    $args[$key] = escapeshellarg($arg);
+  }
+  $command = strtr($command, $args);
+  $output  = $result  = NULL;
+
+  // Run the command.
+  exec($command, $output, $result);
+
+  return $result == 0;
+
+}

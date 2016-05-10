@@ -1,0 +1,1094 @@
+<?php
+
+/**
+ * @file
+ *   Main module file, Imports the nodes form the old site to the new one
+ *
+ */
+define('INES_IMPORT_DEBUG_MODE', FALSE);
+
+/*
+ *
+ * TODOS
+ * Make XML to array recursite
+ * Fill in source_id on node & iother fields
+ *
+ */
+
+function ines_import_menu() {
+  $items['test'] = array(
+    'title'            => t('TEST'),
+    'page callback'    => 'ines_import_test',
+    'access arguments' => array('administer ckeditor'),
+    'access callback'  => TRUE,
+    'type'             => MENU_NORMAL_ITEM,
+  );
+
+  return $items;
+
+}
+
+/**
+ * for recording 404 URLs
+ */
+function ines_import_record_404() {
+  if (!empty($_GET['q']) && ines_body_right($_GET['q'], 5) == '.html') {
+    $record = array(
+      'url'  => $_GET['q'],
+      'time' => time(),
+    );
+    drupal_write_record('ines_import', $record);
+  }
+
+}
+
+/**
+ * For testing
+ */
+function ines_import_test() {
+  // eg artilce = 10240506 10517179
+  // A rendom gallery
+  if (1 == 2) {
+    $result = ines_import_import_content(9323184);
+    drupal_goto('atom/' . $result->sid);
+  }
+
+  // A rendom image
+  if (1 == 2) {
+    $result = ines_import_get_source_data(9601066);
+    var_export($result);
+    die();
+  }
+
+  if (1 == 1) {
+    $result = ines_import_import_content(10149575);
+
+    if (!empty($result->nid)) {
+      drupal_goto('node/' . $result->nid);
+    }
+    else {
+      var_export($result);
+    }
+  }
+
+}
+
+/**
+ * Returns the source data from the old database
+ *
+ * @param type $article_id
+ * @return boolean
+ */
+function ines_import_get_source_data($article_id) {
+  $article_id = (string) $article_id;
+
+  $db_result = ines_import_get_old_article($article_id);
+
+  // Get the source and prepare it for import depending on the source type
+  if (empty($db_result->content)) {
+    return FALSE;
+  }
+  if ($db_result->ArticleType == 'picture') {
+    $source                                = empty($db_result->content) ?
+      NULL : ines_import_xmlstr_to_array($db_result->content);
+    $source['com.escenic.defaultmetadata'] = empty($source['com.escenic.defaultmetadata']) ?
+      NULL : ines_import_xmlstr_to_array($source['com.escenic.defaultmetadata']);
+    $source['binary']                      = empty($source['binary']) ?
+      NULL : ines_import_xmlstr_to_array($source['binary']);
+    $source['articleID']                   = $article_id;
+    $source['db_result']                   = $db_result;
+  }
+  elseif ($db_result->ArticleType == 'gallery') {
+    $source                          = empty($db_result->content) ?
+      NULL : ines_import_xmlstr_to_array($db_result->content);
+    $source['com.escenic.summaries'] = empty($source['com.escenic.summaries']) ?
+      NULL : ines_import_xmlstr_to_array($source['com.escenic.summaries']);
+    $source['articleID']             = $article_id;
+    $source['db_result']             = $db_result;
+  }
+  else {
+    $source                          = empty($db_result->content) ?
+      NULL : ines_import_xmlstr_to_array($db_result->content);
+    $source['com.escenic.summaries'] = empty($source['com.escenic.summaries']) ?
+      NULL : ines_import_xmlstr_to_array($source['com.escenic.summaries']);
+    $source['articleID']             = $article_id;
+    $source['db_result']             = $db_result;
+    $source['tags']                  = ines_import_get_old_article_tags($article_id);
+  }
+
+  return $source;
+
+}
+
+/**
+ * Determines the type of content and imports it and then returns the imported object
+ *
+ * @param type $article_id
+ * @return boolean
+ */
+function ines_import_import_content($article_id) {
+  // Check to see if we already have the component
+  if (INES_IMPORT_DEBUG_MODE === FALSE) {
+    $query  = db_select('field_data_source_id', 's');
+    $query->fields('s', array('entity_id', 'bundle'));
+    $query->condition('s.source_id_value', $article_id);
+    $query->OrderBy('s.revision_id', 'DESC');
+    $result = $query->execute();
+    foreach ($result as $row) {
+      if (!empty($row->entity_id)) {
+        // Get entity type form bundle
+        $entity_type = 'node';
+        if ($row->bundle == 'gallery' || $row->bundle == 'image') {
+          $entity_type = 'scald_atom';
+        }
+        $entity = entity_load($entity_type, array($row->entity_id));
+        if (!empty($entity[$row->entity_id])) {
+          return $entity[$row->entity_id];
+        }
+        else {
+          return FALSE;
+        }
+      }
+    }
+  }
+
+
+  $source = ines_import_get_source_data($article_id);
+
+  // Get the source and prepare it for import depending on the source type
+  if (empty($source['db_result']->content)) {
+    return FALSE;
+  }
+  if ($source['db_result']->ArticleType == 'picture') {
+    $object = ines_import_import_image($source);
+  }
+  elseif ($source['db_result']->ArticleType == 'gallery') {
+    $object = ines_import_import_gallery($source);
+  }
+  else {
+    $object = ines_import_import_article($source);
+  }
+
+  return $object;
+
+}
+
+/**
+ * returns the ID form the internal:/article/987657 strings
+ *
+ * @param array $data
+ */
+function ines_import_get_article_id_from_escenic($data) {
+  if (!empty($data['content-summary']['link']['href'])) {
+    $source_href = $data['content-summary']['link']['href'];
+    $source_id   = str_replace('internal:/article/', '', $source_href);
+
+    return $source_id;
+  }
+  elseif (!empty($data['link']['href'])) {
+    $source_href = $data['link']['href'];
+    $source_id   = str_replace('internal:/article/', '', $source_href);
+
+    return $source_id;
+  }
+  else {
+    return NULL;
+  }
+
+}
+
+/**
+ * returns the ID form the internal:/article/987657 strings
+ *
+ * @param array $data
+ */
+function ines_import_get_article_id_from_escenic_gallery($data) {
+  $source_href = $data['link']['href'];
+  $source_id   = str_replace('internal:/article/', '', $source_href);
+
+  return $source_id;
+
+}
+
+/**
+ * Creates a gallery atom and returns it
+ *
+ * @param array $source
+ */
+function ines_import_import_gallery($source) {
+  // Generate all the atoms
+  $objects = array();
+  $sids    = array();
+  foreach ($source['com.escenic.summaries']['picturerel']['content-summary'] as $item) {
+    $source_id           = ines_import_get_article_id_from_escenic_gallery($item);
+    $objects[$source_id] = ines_import_import_content($source_id);
+  }
+
+  $atom            = new stdClass();
+  $atom->provider  = 'scald_gallery';
+  $atom->type      = 'gallery';
+  // $atom->language  = LANGUAGE_NONE;
+  $atom->publisher = 1;
+  $atom->actions   = 7;
+  $atom->title     = $source['title'];
+
+  if (!empty($source['description'])) {
+    $atom->description[LANGUAGE_NONE][0]['value'] = empty($source['description']) ?
+      "" : ines_body_word_limiter($source['description'], 128);
+  }
+
+  $atom->editorial_workflow[LANGUAGE_NONE][0]['value'] = 16;
+  $atom->source_id[LANGUAGE_NONE][0]['value']          = $source['articleID'];
+
+  // Add the pictures
+  $data_items    = array();
+  $gallery_items = array();
+  foreach ($objects as $id => $object) {
+
+    if (empty($atom->scald_thumbnail[LANGUAGE_NONE][0])) {
+      $atom->scald_thumbnail[LANGUAGE_NONE][0] = $object->base_entity;
+    }
+
+    if (!empty($object->sid)) {
+      $gallery_items[] = array(
+        'sid' => $object->sid,
+      );
+    }
+  }
+
+  $atom->gallery_items[LANGUAGE_NONE] = $gallery_items;
+
+  if (count($gallery_items)) {
+    scald_atom_save($atom);
+    // Override the time stamps in the DB
+    $created = strtotime($source['db_result']->publishDate);
+    $changed = strtotime($source['db_result']->lastModified);
+
+    db_update('scald_atoms')
+      ->condition('sid', $atom->sid)
+      ->fields(array('created' => $created, 'changed' => $changed, 'actions' => 7))
+      ->execute();
+
+    return $atom;
+  }
+  else {
+    return FALSE;
+  }
+
+}
+
+/**
+ * Creates a scald image and returns it
+ *
+ * To create the atom I think you just need to create the file object of the image
+ * Then create an empty object that looks like a atom with the correct default fields and then save it
+ * save with scald_atom_save
+ *
+ * @param array $source
+ */
+function ines_import_import_image($source) {
+  $file_old   = $source['binary']['href'];
+  $file_array = explode('/', $file_old);
+  $file_name  = end($file_array);
+  $url        = 'https://s3-eu-west-1.amazonaws.com/bsinescms/binary/' . $source['binary']['href'];
+  $uri        = 'public://' . $file_name;
+
+  $file = ines_import_download_external_file($url, $uri);
+
+  $atom              = new stdClass();
+  $atom->base_entity = $file;
+  $atom->base_id     = $file['fid'];
+  $atom->provider    = 'scald_image';
+  $atom->type        = 'image';
+  $atom->language    = LANGUAGE_NONE;
+  $atom->publisher   = 1;
+  $atom->actions     = 7;
+  $atom->title       = $file_name;
+
+  if (!empty($source['description'])) {
+    $atom->description[LANGUAGE_NONE][0]['value'] = empty($source['description']) ?
+      "" : ines_body_word_limiter($source['description'], 128);
+  }
+  if (!empty($source['caption'])) {
+    $atom->caption[LANGUAGE_NONE][0]['value'] = empty($source['caption']) ?
+      "" : ines_body_word_limiter($source['caption'], 128);
+  }
+  if (!empty($source['copyright'])) {
+    $atom->copyright[LANGUAGE_NONE][0]['value'] = empty($source['copyright']) ?
+      "" : ines_body_word_limiter($source['copyright'], 128);
+  }
+  if (!empty($source['alttext'])) {
+    $atom->alttext[LANGUAGE_NONE][0]['value'] = empty($source['alttext']) ?
+      "" : ines_body_word_limiter($source['alttext'], 128);
+  }
+
+  $atom->editorial_workflow[LANGUAGE_NONE][0]['value'] = 16;
+  $atom->source_id[LANGUAGE_NONE][0]['value']          = $source['articleID'];
+
+  if (empty($atom->scald_thumbnail[LANGUAGE_NONE][0])) {
+    $atom->scald_thumbnail[LANGUAGE_NONE][0] = $file;
+  }
+
+  scald_atom_save($atom);
+
+  // Override the time stamps in the DB
+  $created = strtotime($source['db_result']->publishDate);
+  if ($created < 0) {
+    $created = 0;
+  }
+
+  $changed = strtotime($source['db_result']->lastModified);
+  if ($changed < 0) {
+    $changed = 0;
+  }
+  db_update('scald_atoms')
+    ->condition('sid', $atom->sid)
+    ->fields(array('created' => $created, 'changed' => $changed, 'actions' => 7))
+    ->execute();
+
+
+  return $atom;
+
+}
+
+/**
+ * Creates an article node and returns it
+ *
+ * @param object $source
+ */
+function ines_import_import_article($source) {
+
+  // Get the images and create the atoms
+  $main_items = array();
+  $body_items = array();
+  $objects    = array();
+  if (!empty($source['com.escenic.summaries']) && is_array($source['com.escenic.summaries'])) {
+    foreach ($source['com.escenic.summaries'] as $key => $val) {
+      if ($key == 'storyrel' || $key == 'picturerel') {
+        $main_items[] = $val;
+      }
+      if ($key == 'part-of') {
+        $body_items[] = $val;
+      }
+    }
+  }
+
+  $lead_image = NULL;
+  foreach ($main_items as $items) {
+    // if there are more than one
+    if (!empty($items['content-summary'][0]['content-type'])) {
+      foreach ($items['content-summary'] as $item) {
+        $source_id           = ines_import_get_article_id_from_escenic($item);
+        $objects[$source_id] = ines_import_import_content($source_id);
+        if (empty($lead_image) && !empty($objects[$source_id]->sid)) {
+          $lead_image = $objects[$source_id];
+        }
+      }
+    }
+    elseif ($items['content-summary']['content-type']) {
+      $source_id           = ines_import_get_article_id_from_escenic($items);
+      $objects[$source_id] = ines_import_import_content($source_id);
+      if (empty($lead_image) && !empty($objects[$source_id]->sid)) {
+        $lead_image = $objects[$source_id];
+      }
+    }
+  }
+  foreach ($body_items as $items) {
+    // if there are more than one
+    if (!empty($items['content-summary'][0]['content-type'])) {
+      foreach ($items['content-summary'] as $item) {
+        $source_id           = ines_import_get_article_id_from_escenic($item);
+        $objects[$source_id] = ines_import_import_content($source_id);
+        if (empty($lead_image) && !empty($objects[$source_id]->sid)) {
+          $lead_image = $objects[$source_id];
+        }
+      }
+    }
+    elseif ($items['content-summary']['content-type']) {
+      $source_id           = ines_import_get_article_id_from_escenic($items);
+      $objects[$source_id] = ines_import_import_content($source_id);
+      if (empty($lead_image) && !empty($objects[$source_id]->sid)) {
+        $lead_image = $objects[$source_id];
+      }
+    }
+  }
+
+  ines_import_replace_internal_images($source);
+  ines_import_replace_internal_galleries($source);
+
+  $node                                                = ines_import_get_empty_node('article');
+  $node->title                                         = $source['title'];
+  $node->status                                        = 1;
+  $node->editorial_workflow[LANGUAGE_NONE][0]['value'] = 16;
+  $node->article_type[LANGUAGE_NONE][0]['tid']         = 6;
+  $node->image[LANGUAGE_NONE][0]['sid']                = empty($lead_image->sid) ? NULL : $lead_image->sid;
+  $node->image[LANGUAGE_NONE][0]['options']            = 'a:0:{}';
+  $node->image_size[LANGUAGE_NONE][0]['value']         = 'medium-width';
+  $node->headline_slug[LANGUAGE_NONE][0]['value']      = $node->title;
+
+  // Section
+  $query       = db_select('field_data_section_id', 's');
+  $query->fields('s', array('entity_id'));
+  $query->condition('section_id_value', $source['db_result']->sectionID);
+  $section_tid = $query->execute()->fetchField();
+  if (!empty($section_tid)) {
+    $node->section[LANGUAGE_NONE][0]['tid'] = $section_tid;
+  }
+
+  // byline
+  $node->content_author = array(LANGUAGE_NONE => array());
+  if (!empty($source['byline'])) {
+    $blines = explode(',', $source['byline']);
+    foreach ($blines as $byline) {
+      $name                                  = trim($byline);
+      $terms                                 = ines_import_load_create_term_by_name($name, 16); // Author vocab
+      $term                                  = is_array($terms) ? array_shift($terms) : $terms;
+      $node->content_author[LANGUAGE_NONE][] = array('tid' => $term->tid);
+    }
+  }
+
+
+  // tags
+  $node->tags = array(LANGUAGE_NONE => array());
+  if (!empty($source['tags'])) {
+    $tags = $source['tags'];
+    foreach ($tags as $tag) {
+      $name                        = trim($tag);
+      $terms                       = ines_import_load_create_term_by_name($name, 21); // Topics vocab
+      $term                        = is_array($terms) ? array_shift($terms) : $terms;
+      $node->tags[LANGUAGE_NONE][] = array('tid' => $term->tid);
+    }
+  }
+
+
+  $node->publish_date[LANGUAGE_NONE][0]['value'] = $source['db_result']->publishDate;
+  $node->source_id[LANGUAGE_NONE][0]['value']    = $source['articleID'];
+
+  if (!empty($source['body'])) {
+    $node->body[LANGUAGE_NONE][0] = array(
+      'value'  => $source['body'],
+      'format' => 'editor',
+    );
+  }
+
+  if (!empty($source['subtitle'])) {
+    $node->sub_headline[LANGUAGE_NONE][0] = array(
+      'value'  => $source['subtitle'],
+      'format' => 'subheadline',
+    );
+  }
+
+  if (!empty($source['metaogtitle'])) {
+    $metaogtitle = $source['metaogtitle'];
+    while (is_array($metaogtitle)) {
+      $metaogtitle = array_shift($metaogtitle);
+    }
+    $node->short_mobile_headline[LANGUAGE_NONE][0] = array(
+      'value' => ines_body_word_limiter($metaogtitle, 70),
+    );
+    $node->headline_slug[LANGUAGE_NONE][0]         = array(
+      'value' => ines_body_word_limiter($metaogtitle, 255),
+    );
+  }
+  node_save($node);
+
+
+  // Override the time stamps in the DB
+  $created = strtotime($source['db_result']->publishDate);
+  $changed = strtotime($source['db_result']->lastModified);
+
+  db_update('node')
+    ->condition('nid', $node->nid)
+    ->condition('vid', $node->vid)
+    ->fields(array('created' => $created, 'changed' => $changed))
+    ->execute();
+
+  db_update('node_revision')
+    ->condition('nid', $node->nid)
+    ->condition('vid', $node->vid)
+    ->fields(array('timestamp' => $changed))
+    ->execute();
+
+  return $node;
+
+}
+
+/**
+ * Returns the data from the old DB for the corrsponding article ID
+ *
+ * @param type $article_id
+ * @return type
+ */
+function ines_import_get_old_article($article_id) {
+  $sql = "SELECT
+            al.articleID,
+            al.sectionID,
+            al.publishDate,
+            al.lastModified,
+            st.codeText ArticleState,
+            t.codeText ArticleType,
+            am.source,
+            am.sourceIDStr,
+            c.content
+
+          FROM ArticleList al
+
+          JOIN ArticleMetaContent am
+            ON al.articleID = am.articleID
+
+          JOIN Content c
+            ON al.articleID = c.articleID
+
+          JOIN ArticleState st
+            ON al.ArticleState = st.codeID
+
+          JOIN Articletype t
+            ON al.articleType = t.codeID
+
+          WHERE al.articleID = :d
+            AND al.isHomeSection = 1;
+  ";
+
+  $other_database = array(
+    'database' => 'independent',
+    'username' => 'admin',
+    'password' => '12Courtenay',
+    'host'     => 'indysource.cmvbwjrm9chp.eu-west-1.rds.amazonaws.com',
+    'driver'   => 'mysql',
+  );
+
+  Database::addConnectionInfo('OldDatabaseKey', 'default', $other_database);
+  db_set_active('OldDatabaseKey');
+  $result = db_query($sql, array(':d' => $article_id));
+  db_set_active();
+
+  $db_results = array();
+  foreach ($result as $row) {
+    $db_results[$row->articleID] = $row;
+    break;
+  }
+
+  return $db_results[$row->articleID];
+
+}
+
+/**
+ * Returns the data from the old DB for the corrsponding article ID
+ *
+ * @param type $article_id
+ * @return type
+ */
+function ines_import_get_old_article_tags($article_id) {
+  $q   = 'internal:/article/' . $article_id;
+  $sql = "SELECT tagIdentifier
+          FROM ContentTagRelation
+          WHERE contentIdentifier = '$q'
+  ";
+
+  $other_database = array(
+    'database' => 'independent',
+    'username' => 'admin',
+    'password' => '12Courtenay',
+    'host'     => 'indysource.cmvbwjrm9chp.eu-west-1.rds.amazonaws.com',
+    'driver'   => 'mysql',
+  );
+
+  // Gets the identifiers
+  Database::addConnectionInfo('OldDatabaseKey', 'default', $other_database);
+  db_set_active('OldDatabaseKey');
+  $identifiers_result = db_query($sql);
+  db_set_active();
+
+  $identifiers_db_results = array();
+  foreach ($identifiers_result as $row) {
+    $identifiers_db_results[] = $row->tagIdentifier;
+  }
+
+  // Get the term names
+  $where = array();
+  foreach ($identifiers_db_results as $row) {
+    $data    = explode(':', $row);
+    $where[] = " (scheme = '{$data[0]}:{$data[1]}' AND term = '{$data[2]}') ";
+  }
+
+  // If there are no tags return an empty array
+  if (empty($where)) {
+    return array();
+  }
+
+  $sql_where = implode(' OR ', $where);
+  $sql       = "SELECT name
+                  FROM Tag
+                 WHERE $sql_where
+  ";
+
+  Database::addConnectionInfo('OldDatabaseKey', 'default', $other_database);
+  db_set_active('OldDatabaseKey');
+  $result = db_query($sql);
+  db_set_active();
+
+  $tags_db_results = array();
+  foreach ($result as $row) {
+    $tags_db_results[] = $row->name;
+  }
+
+  return $tags_db_results;
+
+}
+
+/**
+ * Populates or unsets the taxonomy field on the node based on the lookup
+ * by name of the tid from the source node.
+ *
+ * @param object $node
+ * @param object $source
+ * @param string $vocab (local vocabulary name)
+ * @param string $field (local field name)
+ */
+function ines_import_term_mapper(&$node, $source, $vocab, $field, $vid) {
+  $name = empty($source->byline) ? NULL : trim($source->byline);
+  if (!empty($name)) {
+    $new_term = taxonomy_get_term_by_name($name, $vocab);
+    $tid      = empty($new_term) ? NULL : key($new_term);
+    if (!empty($tid)) {
+      $node->{$field}[LANGUAGE_NONE][0]['tid'] = $tid;
+    }
+    else {
+      $term              = new stdClass();
+      $term->name        = trim($name);
+      $term->vid         = $vid;
+      $term->description = '';
+      if (!empty($term->name)) {
+        taxonomy_term_save($term);
+        $node->{$field}[LANGUAGE_NONE][0]['tid'] = $term->tid;
+      }
+    }
+  }
+
+}
+
+/**
+ * Loads and returns or creats and returns a term
+ *
+ * @param type $name
+ * @param type $vid
+ * @return \stdClass
+ */
+function ines_import_load_create_term_by_name($name, $vid) {
+
+  $term = taxonomy_term_load_multiple(array(), array('name' => trim($name), 'vid' => $vid));
+
+  if (empty($term)) {
+    $term       = new stdClass();
+    $term->name = $name;
+    //Save to tags voca for the moment
+    $term->vid  = $vid;
+    taxonomy_term_save($term);
+  }
+
+  return $term;
+
+}
+
+/**
+ * Prepares and empty node object
+ *
+ * @param string $type
+ *    The machine name of the node to prepare
+ *
+ * @return \stdClass
+ */
+function ines_import_get_empty_node($type) {
+  $node           = new stdClass();
+  $node->uid      = 8821;
+  $node->name     = 'MigrationUser';
+  $node->status   = 0;
+  $node->promote  = 1;
+  $node->language = LANGUAGE_NONE;
+
+  $node->type = $type;
+
+  node_object_prepare($node);
+
+  return $node;
+
+}
+
+/**
+ * Saves a remote file to the DB and file system
+ *
+ * param string $url
+ *    Full url to file to download
+ * param string $uri
+ *    Drupal uri of where to save file public://archive/test.pdf
+ * param int $save_mode
+ *    File save mode from drupal core, ex FILE_EXISTS_REPLACE
+ */
+function ines_import_download_external_file($url, $uri, $save_mode = FILE_EXISTS_RENAME, $manage_file = TRUE) {
+
+  $url_info      = parse_url($url);
+  $url_path_info = pathinfo($url_info['path']);
+
+  // Dealing with hidden files
+  if (strpos($url_path_info['dirname'], 'sites/all/files') !== FALSE) {
+    return ci_import_copy_local_file($url, $uri, $save_mode   = FILE_EXISTS_RENAME, $manage_file = TRUE);
+  }
+
+  //This helps with filenames with spaces
+  $url = $url_info['scheme'] . '://' . $url_info['host'] . $url_path_info['dirname'] . '/' . rawurlencode($url_path_info['basename']);
+
+  //Need to remove the filename from the uri
+  $uri_target    = file_uri_target($uri);
+  $uri_scheme    = file_uri_scheme($uri);
+  $uri_path_info = pathinfo($uri_target);
+  $directory     = file_stream_wrapper_uri_normalize($uri_scheme . "://" . $uri_path_info['dirname']);
+
+  if (file_prepare_directory($directory, FILE_CREATE_DIRECTORY)) {
+    $drupal_result = drupal_http_request($url);
+    if (!empty($drupal_result->data)) {
+      $path = file_stream_wrapper_uri_normalize($uri);
+      if ($manage_file) {
+
+        if (mb_strlen($drupal_result->data) < 1000) {
+          return FALSE;
+        }
+
+        $new_file = file_save_data($drupal_result->data, $path, $save_mode);
+      }
+      else {
+        return file_unmanaged_save_data($drupal_result->data, $path, $save_mode);
+      }
+    }
+    else {
+      drupal_set_message("Error downloading file, no data recieved for " . $url);
+      return FALSE;
+    }
+
+    $new_file->display = 1;
+    return (array) $new_file;
+  }
+  else {
+    drupal_set_message("Could not create directory");
+  }
+
+}
+
+/**
+ * convert xml string to php array - useful to get a serializable value
+ *
+ * @param string $xmlstr
+ * @return array
+ *
+ * @author Adrien aka Gaarf & contributors
+ * @see http://gaarf.info/2009/08/13/xml-string-to-php-array/
+ */
+function ines_import_xmlstr_to_array($xmlstr) {
+  while (is_array($xmlstr)) {
+    $xmlstr = array_shift($xmlstr);
+  }
+
+  if (empty($xmlstr)) {
+    return FALSE;
+  }
+
+  $doc             = new DOMDocument();
+  $doc->loadXML($xmlstr);
+  $root            = $doc->documentElement;
+  $output          = ines_import_domnode_to_array($root);
+  $output['@root'] = $root->tagName;
+  return $output;
+
+}
+
+/**
+ * XML to array
+ *
+ * @param type $node
+ * @return type
+ */
+function ines_import_domnode_to_array($node) {
+  $output = array();
+  switch ($node->nodeType) {
+    case XML_CDATA_SECTION_NODE:
+    case XML_TEXT_NODE:
+      $output = trim($node->textContent);
+      break;
+    case XML_ELEMENT_NODE:
+      for ($i = 0, $m = $node->childNodes->length; $i < $m; $i++) {
+        $child = $node->childNodes->item($i);
+        $v     = ines_import_domnode_to_array($child);
+        if (isset($child->tagName)) {
+          $t = $child->tagName;
+          if (!isset($output[strtolower($t)])) {
+            $output[strtolower($t)] = array();
+          }
+          $output[strtolower($t)][] = $v;
+        }
+        elseif ($v || $v === '0') {
+          $output = (string) $v;
+        }
+      }
+      if ($node->attributes->length && !is_array($output)) { //Has attributes but isn't an array
+        $output = array('@content' => $output); //Change output into an array.
+      }
+      if (is_array($output)) {
+        if ($node->attributes->length) {
+          $a = array();
+          foreach ($node->attributes as $attrName => $attrNode) {
+            $a[$attrName] = (string) $attrNode->value;
+          }
+          $output['@attributes'] = $a;
+        }
+        foreach ($output as $t => $v) {
+          if (is_array($v) && count($v) == 1 && $t != '@attributes') {
+            $output[strtolower($t)] = $v[0];
+          }
+        }
+      }
+      break;
+  }
+  return $output;
+
+}
+
+function ines_import_get_info_caption($imageXML) {
+  $imageCaption = isset($imageXML->fields->caption) ?
+    (string) $imageXML->fields->caption :
+    (string) $imageXML->fields->CAPTION;
+  return $imageCaption;
+
+}
+
+function ines_import_get_content_xml($content) {
+  return simplexml_load_string($content);
+
+}
+
+function ines_import_get_content_summaries($content) {
+  $summaries = $content['com.escenic.summaries'];
+
+  return $summaries;
+
+}
+
+function ines_import_get_local_info($content, $contentID) {
+
+  $summaries = ines_import_get_content_summaries($content);
+
+  $cachedData = &drupal_static(__FUNCTION__);
+
+  if (!isset($cachedData[$contentID])) {
+    foreach ($summaries['part-of']['content-summary'] as $contentSummary) {
+      if ($contentSummary['link']['href'] == "internal:/article/" . $contentID) {
+        $cachedData[$contentID] = $contentSummary;
+        break;
+      }
+    }
+  }
+
+  return $cachedData[$contentID];
+
+}
+
+function ines_import_get_atom_by_source_id($source_id, $atom_type = NULL) {
+  // Get Scald id by source id
+  $query  = db_select('field_data_source_id', 's');
+  $query->fields('s', array('entity_id', 'bundle'));
+  $query->condition('s.source_id_value', $source_id);
+  $query->OrderBy('s.revision_id', 'DESC');
+  $result = $query->execute();
+  foreach ($result as $row) {
+    if (!empty($row->entity_id)) {
+      // Get entity type form bundle
+      $entity_type = 'node';
+      if ($row->bundle == 'gallery' || $row->bundle == 'image') {
+        $entity_type = 'scald_atom';
+      }
+      $entity = entity_load($entity_type, array($row->entity_id));
+      if (!empty($entity[$row->entity_id])) {
+        return $entity[$row->entity_id]->sid;
+      }
+      else {
+        return FALSE;
+      }
+    }
+  }
+
+}
+
+/**
+ *
+ * Auxiliar function to replace internal links for PREVIOUSLY migrated images
+ * into Media files.
+ * @see http://php.net/manual/en/function.preg-match.php
+ *
+ * @param $source
+ */
+function ines_import_replace_internal_images(&$source) {
+
+  //  The images to replace contain the source id in the src atribute.
+  //  Inline image style:
+  //    <img alt = "grace-esmag-1212.jpg"
+  //     id = "_642f13d7-7976-4359-999c-1720120b16c2"
+  //     src = "internal:/article/9915569"
+  //      width = "200" />
+
+  $basePattern = '/< *\/? *' // Begining of xml element
+    . 'img' // "img"
+    . '[^>]*' // Any character except >
+    . 'src *= *' // src atribute with possible spaces between =.
+    . '(?:"|\')internal:\/article\/'; // "internal:/article/ or 'internal:/article/
+  // Add the group \d+ to the base pattern to get the ids
+  $pattern     = $basePattern . '(\d+)(?:"|\')/i';
+
+  // Look for all the
+  preg_match_all($pattern, $source['body'], $matches);
+
+  // $matches[0] will contain the text that matched the full pattern.
+  // $matches[1] will contain the source id of the image.
+  if (!empty($matches[1])) {
+    // Loop over all $matches[1] to replace images with scald token.
+    foreach ($matches[1] as $contentID) {
+
+      // Target => all images + br tag at the end.
+      // We want to replace only the one with the contentID.
+      $pattern = $basePattern
+        . $contentID     // "internal:/article/9915569".
+        . '(?:"|\')[^>]*\/>'
+        . '( *<\/? *br *\/?>)?/i';
+
+      ines_import_replace_pattern_by_image($source, $contentID, $pattern);
+    }
+  }
+
+}
+
+/**
+ * @param $source
+ * @param $contentID
+ * @param $pattern
+ */
+function ines_import_replace_pattern_by_image(&$source, $contentID, $pattern) {
+
+  $sid = ines_import_get_atom_by_source_id($contentID, 'image');
+  if (!empty($sid)) {
+
+    $info = '';
+    if (!empty($source['body'])) {
+      $info = ines_import_get_local_info($source, $contentID);
+    }
+
+
+    $replacement = '<div class="dnd-atom-wrapper" data-scald-align="none" data-scald-context="sdl_editor_representation" data-scald-options="" data-scald-sid="' .
+      $sid . '" data-scald-type="image">';
+
+    if (!empty($caption = ines_import_get_info_caption($info))) {
+      $replacement .=
+        '<div class="dnd-caption-wrapper">' .
+        '<!--copyright=' . $sid . '-->' .
+        $caption .
+        '<!--END copyright=' . $sid . '-->' .
+        '</div>';
+    }
+
+    $replacement .=
+      '</div>' .
+      '<p>'; // Replace br tag for p tag.
+
+    if (!empty($source['body'])) {
+      $source['body'] = preg_replace($pattern, $replacement, $source['body']);
+    }
+  }
+  // If doesn't exist any image migrated with the sourceID == $contentID
+  // Replace with a placeholder if the environment is local or dev
+  else {
+
+    // Replace image with this placeholder:
+    $replacement = '<div class="missing-inline-element" ' .
+      'data-msg="Inline image not migrated" ' .
+      'data-element-type="image" data-source-id="'
+      . $contentID
+      . '"></div>';
+
+    if (!empty($source['body'])) {
+      $source['body'] = preg_replace($pattern, $replacement, $source['body']);
+    }
+  }
+
+}
+
+/**
+ *
+ * Auxiliar function to replace internal links for PREVIOUSLY migrated images
+ * into Media files.
+ *
+ * @see http://php.net/manual/en/function.preg-match.php
+ *
+ * @param $source
+ */
+function ines_import_replace_internal_galleries(&$source) {
+
+  // Inline galleries style:
+  // <a alt = "grace-esmag-1212.jpg" ...
+  //   href = "internal:/article/9915569" ... />
+
+  $basePattern = '/< *\/? *' // Begining of xml element
+    . 'a' // "a"
+    . '[^>]*' // Any character except >
+    . 'href *= *' // href atribute with possible spaces between =
+    . '(?:"|\')internal:\/article\/'; // "internal:/article/
+
+  $pattern = $basePattern . '(\d+)' // Source id of the article (more or less 7 digits)
+    . '(?:"|\')/i'; // " or '
+
+  preg_match_all($pattern, $source['body'], $matches);
+
+  // $matches[0] will contain the text that matched the full pattern.
+  if (!empty($matches[1])) {
+    // Loop over all $matches[1] to replace images with scald token.
+    foreach ($matches[1] as $contentID) {
+
+      $pattern = '/< *\/? *' // Begining of xml element
+        . 'a' // "a"
+        . '[^>]*' // Any character except >
+        . 'href *= *' // src or href atribute with possible spaces between =
+        . '(?:"|\')internal:\/article\/' . $contentID . '(?:"|\')[^>]*>[^<]*<\/a>/i';  // "internal:/article/9915569"
+
+      ines_import_replace_pattern_by_gallery($source, $contentID, $pattern);
+    }
+  }
+
+}
+
+/**
+ * @param $source
+ * @param $contentID
+ * @param $pattern
+ */
+function ines_import_replace_pattern_by_gallery(&$source, $contentID, $pattern) {
+
+  $sid = ines_import_get_atom_by_source_id($contentID, 'gallery');
+  if (!empty($sid)) {
+
+    $replacement = '<div class="dnd-atom-wrapper" data-scald-align="none" data-scald-context="full" data-scald-options="" data-scald-sid="' . $sid . '" data-scald-type="gallery">
+        <div class="dnd-caption-wrapper"><!--copyright=' . $sid . '--><!--END copyright=' . $sid . '--></div>
+        </div>';
+
+    if (!empty($source['body'])) {
+      $source['body'] = preg_replace($pattern, $replacement, $source['body']);
+    }
+  }
+  else {
+    // Replace with a placeholder.
+    $replacement = '<div class="missing-inline-element" ' .
+      'data-msg="Inline element (gallery, inline links...) not migrated" ' .
+      'data-element-type="not-image" data-source-id="'
+      . $contentID
+      . '"></div>';
+
+    if (!empty($source['body'])) {
+      $source['body'] = preg_replace($pattern, $replacement, $source['body']);
+    }
+  }
+
+}

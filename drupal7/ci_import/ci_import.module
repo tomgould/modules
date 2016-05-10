@@ -21,7 +21,7 @@ function ci_import_menu() {
 }
 
 function ci_import_test() {
-  ci_import_import_content('casestudy', 'casestudy');
+  ci_import_import_content('story', 'story');
 
 }
 

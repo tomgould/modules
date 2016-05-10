@@ -1,0 +1,42 @@
+<?php
+
+/**
+ * @file
+ *   Install file for the add_js module. Creates required table
+ */
+
+/**
+ * Implementation of hook_scheme().
+ */
+function ines_import_schema() {
+  $schema           = array();
+  $schema['ines_import'] = array(
+    'description' => 'Stores the data for the ines_import module',
+    'fields'      => array(
+      'id'           => array(
+        'description' => 'The primary identifier for a record.',
+        'type'        => 'serial',
+        'unsigned'    => TRUE,
+        'not null'    => TRUE,
+      ),
+      'url'          => array(
+        'type'        => 'varchar',
+        'length'      => '1000',
+        'description' => 'The requested URL.',
+      ),
+      'time'       => array(
+        'type'        => 'int',
+        'unsigned'    => TRUE,
+        'not null'    => TRUE,
+        'description' => 'Timestamp.',
+      ),
+    ),
+    'primary key' => array('id'),
+    'indexes'     => array(
+      'time' => array('time'),
+    ),
+  );
+
+  return $schema;
+
+}

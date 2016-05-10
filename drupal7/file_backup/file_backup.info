@@ -1,0 +1,4 @@
+name = File Backup
+description = Zips the files up for backup 
+core = 7.x
+package = Custom

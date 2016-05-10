@@ -14,7 +14,10 @@ function ci_import_import_page($source) {
 
   global $user;
   $user = user_load_by_mail($source->user_account->mail);
-  $node = ci_import_get_empty_node('page');
+  if (empty($user->uid)) {
+    $user = user_load(1);
+  }
+  $node = ci_import_get_empty_node('page', $user);
 
   ci_import_defaults($node, $source);
   ci_import_premium($node, $source);
@@ -47,7 +50,10 @@ function ci_import_import_casestudy($source) {
 
   global $user;
   $user = user_load_by_mail($source->user_account->mail);
-  $node = ci_import_get_empty_node('casestudy');
+  if (empty($user->uid)) {
+    $user = user_load(1);
+  }
+  $node = ci_import_get_empty_node('casestudy', $user);
 
   ci_import_defaults($node, $source);
   ci_import_premium($node, $source);
@@ -83,7 +89,10 @@ function ci_import_import_blog($source) {
 
   global $user;
   $user = user_load_by_mail($source->user_account->mail);
-  $node = ci_import_get_empty_node('blog');
+  if (empty($user->uid)) {
+    $user = user_load(1);
+  }
+  $node = ci_import_get_empty_node('blog', $user);
 
   ci_import_defaults($node, $source);
   ci_import_premium($node, $source);
@@ -118,7 +127,10 @@ function ci_import_import_around_the_web($source) {
 
   global $user;
   $user = user_load_by_mail($source->user_account->mail);
-  $node = ci_import_get_empty_node('around_the_web');
+  if (empty($user->uid)) {
+    $user = user_load(1);
+  }
+  $node = ci_import_get_empty_node('around_the_web', $user);
 
   ci_import_defaults($node, $source);
   ci_import_premium($node, $source);
@@ -151,7 +163,10 @@ function ci_import_import_library_item($source) {
 
   global $user;
   $user = user_load_by_mail($source->user_account->mail);
-  $node = ci_import_get_empty_node('library_item');
+  if (empty($user->uid)) {
+    $user = user_load(1);
+  }
+  $node = ci_import_get_empty_node('library_item', $user);
 
   ci_import_defaults($node, $source);
   ci_import_premium($node, $source);
@@ -174,7 +189,7 @@ function ci_import_import_library_item($source) {
   $node->body[LANGUAGE_NONE][0]['value']           = ci_import_field_value(
     $source->field_notes
   );
-  $node->body[LANGUAGE_NONE][0]['format'] = 'filtered_html';
+  $node->body[LANGUAGE_NONE][0]['format'] = 'full_html';
   $node->body[LANGUAGE_NONE][0]['value']  = ci_import_fix_images_in_body($node->body[LANGUAGE_NONE][0]['value']);
 
   $node->field_infotype[LANGUAGE_NONE][0]['value'] = ci_import_field_value(
@@ -183,6 +198,8 @@ function ci_import_import_library_item($source) {
   $node->field_year[LANGUAGE_NONE][0]['value']     = ci_import_field_value(
     $source->field_year
   );
+
+  $node->field_source_nid[LANGUAGE_NONE][0]['value'] = $source->nid;
 
   ci_import_save_the_node($node, $source);
   ci_import_comments($node, $source);
@@ -202,7 +219,10 @@ function ci_import_import_story($source) {
 
   global $user;
   $user = user_load_by_mail($source->user_account->mail);
-  $node          = ci_import_get_empty_node('story');
+  if (empty($user->uid)) {
+    $user = user_load(1);
+  }
+  $node = ci_import_get_empty_node('story', $user);
 
   ci_import_defaults($node, $source);
   ci_import_premium($node, $source);
@@ -222,6 +242,8 @@ function ci_import_import_story($source) {
   $node->body[LANGUAGE_NONE][0] = ci_import_body_value($source);
   $node->body[LANGUAGE_NONE][0]['value'] = ci_import_fix_images_in_body($node->body[LANGUAGE_NONE][0]['value']);
 
+  $node->field_source_nid[LANGUAGE_NONE][0]['value'] = $source->nid;
+
   ci_import_save_the_node($node, $source);
   ci_import_comments($node, $source);
 
@@ -240,7 +262,10 @@ function ci_import_import_image($source) {
 
   global $user;
   $user = user_load_by_mail($source->user_account->mail);
-  $node          = ci_import_get_empty_node('image');
+  if (empty($user->uid)) {
+    $user = user_load(1);
+  }
+  $node = ci_import_get_empty_node('image', $user);
 
   ci_import_defaults($node, $source);
   ci_import_premium($node, $source);
@@ -280,7 +305,10 @@ function ci_import_import_simplenews($source) {
 
   global $user;
   $user = user_load_by_mail($source->user_account->mail);
-  $node          = ci_import_get_empty_node('simplenews');
+  if (empty($user->uid)) {
+    $user = user_load(1);
+  }
+  $node = ci_import_get_empty_node('simplenews', $user);
 
   ci_import_defaults($node, $source);
   ci_import_premium($node, $source);
@@ -291,6 +319,8 @@ function ci_import_import_simplenews($source) {
   $node->body[LANGUAGE_NONE][0]['value'] = ci_import_fix_images_in_body($node->body[LANGUAGE_NONE][0]['value']);
 
   ci_import_files($node, $source, 'field_file', 'files');
+
+  $node->field_source_nid[LANGUAGE_NONE][0]['value'] = $source->nid;
 
   ci_import_save_the_node($node, $source);
   ci_import_comments($node, $source);
@@ -310,7 +340,10 @@ function ci_import_import_event($source) {
 
   global $user;
   $user = user_load_by_mail($source->user_account->mail);
-  $node          = ci_import_get_empty_node('event');
+  if (empty($user->uid)) {
+    $user = user_load(1);
+  }
+  $node = ci_import_get_empty_node('event', $user);
 
   ci_import_defaults($node, $source);
   ci_import_premium($node, $source);
@@ -328,13 +361,13 @@ function ci_import_import_event($source) {
   $node->field_contact_details[LANGUAGE_NONE][0]['value']  = ci_import_field_value(
     $source->field_contact_details
   );
-  $node->field_contact_details[LANGUAGE_NONE][0]['format'] = 'filtered_html';
+  $node->field_contact_details[LANGUAGE_NONE][0]['format'] = 'full_html';
   $node->field_contact_details[LANGUAGE_NONE][0]['value']  = ci_import_fix_images_in_body($node->field_contact_details[LANGUAGE_NONE][0]['value']);
 
   $node->field_event_description[LANGUAGE_NONE][0]['value'] = ci_import_field_value(
     $source->field_event_description
   );
-  $node->field_event_description[LANGUAGE_NONE][0]['format'] = 'filtered_html';
+  $node->field_event_description[LANGUAGE_NONE][0]['format'] = 'full_html';
   $node->field_event_description[LANGUAGE_NONE][0]['value']  = ci_import_fix_images_in_body($node->field_event_description[LANGUAGE_NONE][0]['value']);
 
   $node->field_event_type[LANGUAGE_NONE][0]['value'] = ci_import_field_value(
@@ -349,6 +382,8 @@ function ci_import_import_event($source) {
 
   $node->field_event_date[LANGUAGE_NONE][0]['value']  = $source->event->start_utc;
   $node->field_event_date[LANGUAGE_NONE][0]['value2'] = $source->event->end_utc;
+
+  $node->field_source_nid[LANGUAGE_NONE][0]['value'] = $source->nid;
 
   ci_import_save_the_node($node, $source);
   ci_import_comments($node, $source);
@@ -368,7 +403,10 @@ function ci_import_import_forum($source) {
 
   global $user;
   $user = user_load_by_mail($source->user_account->mail);
-  $node          = ci_import_get_empty_node('forum');
+  if (empty($user->uid)) {
+    $user = user_load(1);
+  }
+  $node = ci_import_get_empty_node('forum', $user);
 
   ci_import_defaults($node, $source);
   ci_import_premium($node, $source);
@@ -377,6 +415,8 @@ function ci_import_import_forum($source) {
 
   $node->body[LANGUAGE_NONE][0]          = ci_import_body_value($source);
   $node->body[LANGUAGE_NONE][0]['value'] = ci_import_fix_images_in_body($node->body[LANGUAGE_NONE][0]['value']);
+
+  $node->field_source_nid[LANGUAGE_NONE][0]['value'] = $source->nid;
 
   ci_import_save_the_node($node, $source);
   ci_import_comments($node, $source);

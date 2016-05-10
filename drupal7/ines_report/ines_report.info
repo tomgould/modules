@@ -1,0 +1,3 @@
+name = ines_report
+description = For Generating a report on nid, pub date and authors
+core = 7.x

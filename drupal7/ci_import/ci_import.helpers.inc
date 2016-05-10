@@ -27,15 +27,20 @@ function ci_import_debug($var, $die = FALSE) {
  *
  * @return \stdClass
  */
-function ci_import_get_empty_node($type) {
+function ci_import_get_empty_node($type, $user) {
   global $language;
-
   $node           = new stdClass();
-  $node->uid      = 1;
-  $node->name     = 'admin';
   $node->status   = 0;
   $node->promote  = 1;
   $node->language = LANGUAGE_NONE;
+  if (!empty($user->uid)) {
+    $node->uid  = $user->uid;
+    $node->name = $user->name;
+  }
+  else {
+    $node->uid  = 1;
+    $node->name = 'admin';
+  }
 
   $node->type = $type;
 
@@ -100,7 +105,7 @@ function ci_import_comments($node, $source) {
           }
         }
 
-        // comment_submit($comment);
+        comment_submit($comment);
         comment_save($comment);
 
         $previous_comment = $comment;
@@ -121,6 +126,18 @@ function ci_import_save_the_node($node, $source) {
   $node->source_changed = $source->changed;
   $node->status  = $source->status;
   node_save($node, $source);
+
+  db_update('node')
+    ->condition('nid', $node->nid)
+    ->condition('vid', $node->vid)
+    ->fields(array('created' => $source->created, 'changed' => $source->changed))
+    ->execute();
+
+  db_update('node_revision')
+    ->condition('nid', $node->nid)
+    ->condition('vid', $node->vid)
+    ->fields(array('timestamp' => $source->changed))
+    ->execute();
 
 }
 
@@ -251,7 +268,7 @@ function ci_import_defaults(&$node, $source) {
  */
 function ci_import_premium(&$node, $source) {
   if (!empty($source->premium_level)) {
-    $node->field_premium_content = $source->premium_level->level_name;
+    $node->field_premium_content[LANGUAGE_NONE][0]['value'] = $source->premium_level->level_name;
   }
 
 }
@@ -302,7 +319,7 @@ function ci_import_term_mapper(&$node, $source, $vocab, $field) {
       $new_term = taxonomy_get_term_by_name($name, $vocab);
       $tid      = empty($new_term) ? NULL : key($new_term);
       if (!empty($tid)) {
-        $node->{$field}[LANGUAGE_NONE][0]['tid'] = $tid;
+        $node->{$field}[LANGUAGE_NONE][]['tid'] = $tid;
       }
     }
   }
@@ -326,12 +343,37 @@ function ci_import_files(&$node, $source, $local_name, $source_name) {
 
   if (is_array($source->{$source_name})) {
     foreach ($source->{$source_name} as $id => $item) {
+
+      if (empty($item->filename)) {
+        continue;
+      }
+
+      $bits = explode('.', $item->filename);
+      $bit  = end($bits);
+      $mime = strtolower($bit);
+      if (strpos('?', $mime) !== FALSE) {
+        $mime = ci_import_left($mime, strpos($mime, '?'));
+      }
+      $images = array(
+        'png',
+        'jpg',
+        'jpeg',
+        'gif',
+      );
+
+      if (in_array($mime, $images)) {
+        $schema = 'public';
+      }
+      else {
+        $schema = 'private';
+      }
+
       if (!empty($item)) {
         if (strlen(trim($info['settings']['file_directory'])) > 0) {
-          $final_path = 'public://' . $info['settings']['file_directory'] . '/' . $item->filename;
+          $final_path = $schema . '://' . $info['settings']['file_directory'] . '/' . $item->filename;
         }
         else {
-          $final_path = 'public://' . $item->filename;
+          $final_path = $schema . '://' . $item->filename;
         }
         $node->{$local_name}[LANGUAGE_NONE][$i] = ci_import_download_external_file(
           ci_import_remote_url() . $item->filepath, $final_path);
@@ -494,18 +536,18 @@ function ci_import_get_log_location() {
  * param string $url
  *    Full url to file to download
  * param string $uri
- *    Drupal uri of where to save file public://archive/test.pdf
+ *    Drupal uri of where to save file private://archive/test.pdf
  * param int $save_mode
  *    File save mode from drupal core, ex FILE_EXISTS_REPLACE
  */
-function ci_import_download_external_file($url, $uri, $save_mode = FILE_EXISTS_RENAME, $manage_file = TRUE) {
+function ci_import_download_external_file($url, $uri, $save_mode = FILE_EXISTS_REPLACE, $manage_file = TRUE) {
 
   $url_info      = parse_url($url);
   $url_path_info = pathinfo($url_info['path']);
 
   // Dealing with hidden files
   if (strpos($url_path_info['dirname'], 'sites/all/files') !== FALSE) {
-    return ci_import_copy_local_file($url, $uri, $save_mode   = FILE_EXISTS_RENAME, $manage_file = TRUE);
+    return ci_import_copy_local_file($url, $uri, $save_mode   = FILE_EXISTS_REPLACE, $manage_file = TRUE);
   }
 
   //This helps with filenames with spaces
@@ -558,7 +600,7 @@ function ci_import_fix_images_in_body($body) {
     $old_src = trim($value[2][$src_key], '"');
 
     if (ci_import_left($old_src, 1) == '/') {
-      $url = 'http://tomgould.asuscomm.com:8099/' . $old_src;
+      $url = 'http://old.emptyhomenetwork/' . $old_src;
     }
     else {
       $url = $old_src;
@@ -568,8 +610,8 @@ function ci_import_fix_images_in_body($body) {
     $url = mb_str_replace('http:', 'http:/', $url);
     $url = mb_str_replace('https:', 'https:/', $url);
     $url = mb_str_replace('system/files', 'sites/all/files_hidden_01', $url);
-    $url = mb_str_replace('http://www.ehnetwork.org.uk/', 'http://tomgould.asuscomm.com:8099/', $url);
-    $url = mb_str_replace('http://ehnetwork.org.uk/', 'http://tomgould.asuscomm.com:8099/', $url);
+    $url = mb_str_replace('http://www.ehnetwork.org.uk/', 'http://old.emptyhomenetwork/', $url);
+    $url = mb_str_replace('http://ehnetwork.org.uk/', 'http://old.emptyhomenetwork/', $url);
 
     $ary      = explode('/', $old_src);
     $filename = end($ary);
@@ -757,11 +799,11 @@ function ci_import_left($str, $count) {
  * param string $url
  *    Full url to file to download
  * param string $uri
- *    Drupal uri of where to save file public://archive/test.pdf
+ *    Drupal uri of where to save file private://archive/test.pdf
  * param int $save_mode
  *    File save mode from drupal core, ex FILE_EXISTS_REPLACE
  */
-function ci_import_copy_local_file($url, $uri, $save_mode = FILE_EXISTS_RENAME, $manage_file = TRUE) {
+function ci_import_copy_local_file($url, $uri, $save_mode = FILE_EXISTS_REPLACE, $manage_file = TRUE) {
 
   $url_info      = parse_url($url);
   $url_path_info = pathinfo($url_info['path']);

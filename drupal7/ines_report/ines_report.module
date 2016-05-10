@@ -1,0 +1,112 @@
+<?php
+
+
+function ines_report_menu() {
+  $items = array();
+  $items['report-nids'] = array(
+      'title' => 'report',
+      'description' => 'report',
+      'page callback' => 'drush_ines_report',
+      'access arguments' => array('access content'),
+      'weight' => 30,
+  );
+
+  return $items;
+}
+
+/**
+ * Does a thing
+ */
+function drush_ines_report() {
+  $dates = array(
+      array(
+          'startdate' => "2012-10-01 00:00:00",
+          'enddate' => "2013-09-30 00:00:00",
+      ),
+      array(
+          'startdate' => "2013-10-01 00:00:00",
+          'enddate' => "2014-09-30 00:00:00",
+      ),
+      array(
+          'startdate' => "2014-10-01 00:00:00",
+          'enddate' => "2015-09-30 00:00:00",
+      ),
+      array(
+          'startdate' => "2015-10-01 00:00:00",
+          'enddate' => "2016-09-30 00:00:00",
+      ),
+  );
+
+  foreach ($dates as $date) {
+    ines_report_generator($date['startdate'], $date['enddate']);
+  }
+
+  return '';
+}
+
+/**
+ * Does a thing
+ */
+function ines_report_generator($startdate, $enddate) {
+  $query = db_select('node', 'n');
+  $query->leftJoin('field_data_publish_date', 'd', 'n.nid = d.entity_id');
+  $query->leftJoin('taxonomy_index', 'ti', 'ti.nid = n.nid');
+  $query->leftJoin('taxonomy_term_data', 'a', 'ti.tid = a.tid');
+  $query->condition('n.status', '1');
+  $query->condition('d.bundle', 'article');
+  $query->condition('a.vid', '16');
+  $query->condition('d.publish_date_value', $startdate, '>=');
+  $query->condition('d.publish_date_value', $enddate, '<');
+
+  $query->fields('n', array('nid'));
+  $query->fields('a', array('name'));
+  $query->fields('d', array('publish_date_value'));
+
+  $result = $query->orderBy('n.nid')->execute();
+
+  $array = array();
+
+  foreach ($result as $row) {
+
+    //$gash[] = $row;
+
+    if (empty($array['nid_' . $row->nid])) {
+      $array['nid_' . $row->nid] = array($row->nid, $row->publish_date_value, $row->name);
+    } else {
+      if (array_search($row->name, $array['nid_' . $row->nid]) === FALSE) {
+        $array['nid_' . $row->nid][] = $row->name;
+      }
+    }
+  }
+
+  // Make a CSV
+  $name = ines_report_file_namer($startdate . '_' . $enddate . '.csv');
+  $fp = fopen('/tmp/' . $name, 'w');
+  foreach ($array as $fields) {
+    fputcsv($fp, $fields);
+  }
+  fclose($fp);
+}
+
+/**
+ * Creates a safe filename form the supplies string
+ *
+ * @param string $str
+ *
+ * @return string
+ */
+function ines_report_file_namer($str = '') {
+  $str = strip_tags($str);
+  $str = preg_replace('/[\r\n\t ]+/', ' ', $str);
+  $str = preg_replace('/[\"\*\/\:\<\>\?\'\|]+/', ' ', $str);
+  $str = html_entity_decode($str, ENT_QUOTES, "utf-8");
+  $str = htmlentities($str, ENT_QUOTES, "utf-8");
+  $str = preg_replace("/(&)([a-z])([a-z]+;)/i", '$2', $str);
+  $str = str_replace(' ', '-', $str);
+  $str = rawurlencode($str);
+  $str = str_replace('%', '-', $str);
+  $str = str_replace('+', '-', $str);
+  $str = str_replace(' ', '-', $str);
+
+  return $str;
+}

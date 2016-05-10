@@ -1,0 +1,4 @@
+name = INES Import
+description = Imports the old articles from the old DB on Amazon
+core = 7.x
+package = INES
